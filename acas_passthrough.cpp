@@ -95,7 +95,6 @@ std::vector<uint8_t> apdu_case4(uint8_t cla, uint8_t ins, uint8_t p1, uint8_t p2
 
 class PcscCard {
 public:
-    explicit PcscCard(std::string reader) : reader_name(std::move(reader)) {}
     ~PcscCard()
     {
         if (hcard) {
@@ -120,7 +119,7 @@ public:
     {
         connect();
 
-        uint32_t recv_length = 256;
+        DWORD recv_length = 256;
         std::vector<uint8_t> recv(recv_length);
         int32_t result = SCardTransmit(hcard, SCARD_PCI_T1, message.data(),
                                     static_cast<uint32_t>(message.size()),
@@ -169,10 +168,54 @@ private:
         }
     }
 
-    std::string first_reader()
+    bool is_acas_card(SCARDHANDLE card)
+    {
+        std::default_random_engine engine(std::random_device{}());
+        std::uniform_int_distribution<int> distrib(0, 255);
+
+        std::vector<uint8_t> data = { 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x8A, 0xF7 };
+        std::vector<uint8_t> a0init(8);
+        for (uint8_t& v : a0init) {
+            v = static_cast<uint8_t>(distrib(engine));
+        }
+        data.insert(data.end(), a0init.begin(), a0init.end());
+
+        std::vector<uint8_t> apdu = apdu_case4(0x90, 0xA0, 0x00, 0x01, data, 0x00);
+        DWORD recv_length = 256;
+        std::vector<uint8_t> recv(recv_length);
+        LONG result = SCardTransmit(card, SCARD_PCI_T1, apdu.data(),
+                                    static_cast<DWORD>(apdu.size()),
+                                    nullptr, recv.data(), &recv_length);
+        if (result != SCARD_S_SUCCESS || recv_length < 0x0e + 0x20 + 2) {
+            return false;
+        }
+        recv.resize(recv_length);
+        if (recv[recv.size() - 2] != 0x90 || recv[recv.size() - 1] != 0x00) {
+            return false;
+        }
+
+        std::vector<uint8_t> a0data(recv.begin(), recv.end() - 2);
+        std::vector<uint8_t> a0response(a0data.begin() + 0x06, a0data.begin() + 0x0e);
+        std::vector<uint8_t> a0hash(a0data.begin() + 0x0e, a0data.begin() + 0x0e + 0x20);
+
+        std::vector<uint8_t> plain_kcl;
+        plain_kcl.insert(plain_kcl.end(), std::begin(kMasterKey), std::end(kMasterKey));
+        plain_kcl.insert(plain_kcl.end(), a0init.begin(), a0init.end());
+        plain_kcl.insert(plain_kcl.end(), a0response.begin(), a0response.end());
+        sha256_t kcl = SHA256::hash(plain_kcl);
+
+        std::vector<uint8_t> plain_data;
+        plain_data.insert(plain_data.end(), kcl.begin(), kcl.end());
+        plain_data.insert(plain_data.end(), a0init.begin(), a0init.end());
+        sha256_t hash = SHA256::hash(plain_data);
+
+        return std::equal(hash.begin(), hash.end(), a0hash.begin());
+    }
+
+    std::string find_acas_reader()
     {
         init();
-        uint32_t size = 0;
+        DWORD size = 0;
         int32_t result = SCardListReaders(hcontext, nullptr, nullptr, &size);
         if (result != SCARD_S_SUCCESS || size == 0) {
             throw std::runtime_error("No smart card readers are available");
@@ -183,7 +226,24 @@ private:
         if (result != SCARD_S_SUCCESS || readers.empty() || readers[0] == '\0') {
             throw std::runtime_error("Failed to list smart card readers");
         }
-        return std::string(readers.data());
+
+        for (const char *reader = readers.data(); *reader; reader += std::strlen(reader) + 1) {
+            SCARDHANDLE candidate = 0;
+            DWORD active_protocol = 0;
+            result = SCardConnect(hcontext, reader, SCARD_SHARE_SHARED,
+                                  SCARD_PROTOCOL_T1, &candidate, &active_protocol);
+            if (result != SCARD_S_SUCCESS) {
+                continue;
+            }
+
+            bool matched = is_acas_card(candidate);
+            SCardDisconnect(candidate, SCARD_LEAVE_CARD);
+            if (matched) {
+                return std::string(reader);
+            }
+        }
+
+        throw std::runtime_error("No ACAS smart card was found");
     }
 
     void connect()
@@ -192,9 +252,7 @@ private:
         if (hcard) {
             return;
         }
-        if (reader_name.empty()) {
-            reader_name = first_reader();
-        }
+        reader_name = find_acas_reader();
         int32_t result = SCardConnect(hcontext, reader_name.c_str(), SCARD_SHARE_SHARED,
                                    SCARD_PROTOCOL_T1, &hcard, &active_protocol);
         if (result != SCARD_S_SUCCESS) {
@@ -204,7 +262,7 @@ private:
 
     SCARDCONTEXT hcontext = 0;
     SCARDHANDLE hcard = 0;
-    uint32_t active_protocol = 0;
+    DWORD active_protocol = 0;
     std::string reader_name;
 };
 
@@ -219,8 +277,6 @@ private:
 
 class Acas {
 public:
-    explicit Acas(const char *reader) : card(reader ? reader : "") {}
-
     bool on_ecm(const std::vector<uint8_t>& ecm)
     {
         if (ecm == last_ecm) {
@@ -497,8 +553,6 @@ void process_signaling_payload(uint16_t packet_id, const uint8_t *payload, size_
 
 class Passthrough {
 public:
-    explicit Passthrough(const char *reader) : acas(reader) {}
-
     int process(const uint8_t *data, size_t size, acas_output_callback output, void *opaque)
     {
         buffer.insert(buffer.end(), data, data + size);
@@ -607,13 +661,12 @@ private:
 
 struct acas_passthrough {
     Passthrough impl;
-    explicit acas_passthrough(const char *reader) : impl(reader) {}
 };
 
-extern "C" acas_passthrough_t *acas_passthrough_create(const char *reader_name)
+extern "C" acas_passthrough_t *acas_passthrough_create(void)
 {
     try {
-        return new acas_passthrough(reader_name);
+        return new acas_passthrough();
     } catch (const std::exception& e) {
         std::cerr << e.what() << std::endl;
         return nullptr;

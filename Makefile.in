@@ -12,20 +12,20 @@ TARGET4 = tssplitter_lite
 TARGETS = $(TARGET) $(TARGET2) $(TARGET3) $(TARGET4)
 RELEASE_VERSION = "1.2.1.1"
 
-CPPFLAGS = -Wall -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64 @ACAS_CPPFLAGS@
+CPPFLAGS = -Wall -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64 @B61_CPPFLAGS@
 CFLAGS   = -O2 -g -pthread
-CXXFLAGS = -O2 -g -pthread -std=c++20 -Wall @ACAS_CPPFLAGS@
+CXXFLAGS = -O2 -g -pthread -std=c++20 -Wall @B61_CPPFLAGS@
 
 LIBS     = @LIBS@
 LIBS2    = -lm
 LIBS3    = -lpthread -lm
 LIBS4    =
-ACAS_LIBS = @ACAS_LIBS@
+B61_LIBS = @B61_LIBS@
 LDFLAGS  =
 
-ACAS_OBJS = @ACAS_OBJS@
+B61_OBJS = @B61_OBJS@
 REC_OBJS = recpt1.o decoder.o mkpath.o tssplitter_lite.o recpt1core.o
-OBJS  = $(REC_OBJS) $(ACAS_OBJS)
+OBJS  = $(REC_OBJS) $(B61_OBJS)
 OBJS2 = recpt1ctl.o recpt1core.o
 OBJS3 = checksignal.o recpt1core.o
 OBJS4 = tssplitter_lite.o tsmain.o
@@ -48,7 +48,7 @@ maintainer-clean: distclean
 	rm -fr configure config.h.in aclocal.m4 autom4te.cache *~
 
 $(TARGET): $(OBJS)
-	$(CXX) $(LDFLAGS) -o $@ $(OBJS) $(LIBS) $(ACAS_LIBS)
+	$(CXX) $(LDFLAGS) -o $@ $(OBJS) $(LIBS) $(B61_LIBS)
 
 $(TARGET2): $(OBJS2)
 	$(CC) $(LDFLAGS) -o $@ $(OBJS2) $(LIBS2)
@@ -65,7 +65,7 @@ acas_passthrough.o: acas_passthrough.cpp acas_passthrough.h
 # Original source: dantto4k/src/aes.cpp
 # Project: https://github.com/nekohkr/dantto4k.git
 # Local source revision: 141fd49cf674c9c9e3f3c770a20b3291ff292969
-dantto_aes.o: ../dantto4k/src/aes.cpp
+dantto_aes.o: @DANTTO4K_SRC@/aes.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(DEPEND): version.h

@@ -80,6 +80,15 @@
   % make maintainer-clean
 ```
 
+4K B61/MMT-TLV の ACAS デスクランブルを有効にする場合は、dantto4k の `src`
+ディレクトリを指定してビルドします。実行時は `--b61` を指定すると、
+挿入済みの ACAS カードを自動検出します。
+
+```
+  % ./configure --enable-b25 --enable-b61 --with-dantto4k-src=/path/to/dantto4k/src
+  % recdvb --b61 BS4K_... 10 out.tlv
+```
+
 ## 動作確認環境
 
 動作確認環境は Ubuntu 24.04.3 LTS (6.8.0-71-generic) です。

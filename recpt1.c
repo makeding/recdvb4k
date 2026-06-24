@@ -334,7 +334,7 @@ process_output(thread_data *tdata,
                size_t size,
                output_sink *sink)
 {
-#ifdef HAVE_ACAS
+#ifdef HAVE_B61
     if(tdata->acas) {
         return acas_passthrough_process(tdata->acas, data, size, write_output, sink);
     }
@@ -347,7 +347,7 @@ process_output(thread_data *tdata,
 static int
 flush_output(thread_data *tdata, output_sink *sink)
 {
-#ifdef HAVE_ACAS
+#ifdef HAVE_B61
     if(tdata->acas) {
         return acas_passthrough_flush(tdata->acas, write_output, sink);
     }
@@ -577,8 +577,8 @@ show_usage(char *cmd)
 #else
     fprintf(stderr, "Usage: \n%s [--udp [--addr hostname --port portnumber]] [--http portnumber] [--dev devicenumber] [--lnb voltage] [--sid SID1,SID2] channel rectime destfile\n", cmd);
 #endif
-#ifdef HAVE_ACAS
-    fprintf(stderr, "4K ACAS passthrough: %s --acas [--acas-reader readername] channel rectime destfile\n", cmd);
+#ifdef HAVE_B61
+    fprintf(stderr, "4K B61 passthrough: %s --b61 channel rectime destfile\n", cmd);
 #endif
     fprintf(stderr, "\n");
     fprintf(stderr, "Remarks:\n");
@@ -598,9 +598,8 @@ show_options(void)
     fprintf(stderr, "  --strip:           Strip null stream\n");
     fprintf(stderr, "  --EMM:             Instruct EMM operation\n");
 #endif
-#ifdef HAVE_ACAS
-    fprintf(stderr, "--acas:              Decrypt 4K MMT/TLV using ACAS card without MPEG-2 remux\n");
-    fprintf(stderr, "--acas-reader name:  Specify smart card reader for ACAS\n");
+#ifdef HAVE_B61
+    fprintf(stderr, "--b61:               Decrypt 4K MMT/TLV using an automatically detected ACAS card\n");
 #endif
     fprintf(stderr, "--udp:               Turn on udp broadcasting\n");
     fprintf(stderr, "  --addr hostname:   Hostname or address to connect\n");
@@ -708,15 +707,14 @@ main(int argc, char **argv)
     tdata.tfd = -1;
     tdata.fefd = 0;
     tdata.dmxfd = 0;
-#ifdef HAVE_ACAS
+#ifdef HAVE_B61
     tdata.acas = NULL;
 #endif
 
     int result;
     int option_index;
     enum {
-        OPT_ACAS = 1000,
-        OPT_ACAS_READER,
+        OPT_B61 = 1000,
     };
     struct option long_options[] = {
 #ifdef HAVE_LIBARIB25
@@ -738,9 +736,8 @@ main(int argc, char **argv)
         { "version",   0, NULL, 'v'},
         { "list",      0, NULL, 'l'},
         { "sid",       1, NULL, 'i'},
-#ifdef HAVE_ACAS
-        { "acas",      0, NULL, OPT_ACAS},
-        { "acas-reader", 1, NULL, OPT_ACAS_READER},
+#ifdef HAVE_B61
+        { "b61",      0, NULL, OPT_B61},
 #endif
         {0, 0, NULL, 0} /* terminate */
     };
@@ -751,8 +748,7 @@ main(int argc, char **argv)
     boolean fileless = FALSE;
     boolean use_stdout = FALSE;
     boolean use_splitter = FALSE;
-    boolean use_acas = FALSE;
-    char *acas_reader = NULL;
+    boolean use_b61 = FALSE;
     char *host_to = NULL;
     int port_to = 1234;
     int port_http = 12345;
@@ -845,15 +841,10 @@ main(int argc, char **argv)
             use_splitter = TRUE;
             sid_list = optarg;
             break;
-#ifdef HAVE_ACAS
-        case OPT_ACAS:
-            use_acas = TRUE;
-            fprintf(stderr, "enable ACAS passthrough descrambling\n");
-            break;
-        case OPT_ACAS_READER:
-            use_acas = TRUE;
-            acas_reader = optarg;
-            fprintf(stderr, "ACAS smart card reader: %s\n", acas_reader);
+#ifdef HAVE_B61
+        case OPT_B61:
+            use_b61 = TRUE;
+            fprintf(stderr, "enable B61 passthrough descrambling\n");
             break;
 #endif
         }
@@ -974,18 +965,18 @@ if(use_http){	// http-server add-
         }
     }
 
-#ifdef HAVE_ACAS
-    if(use_acas) {
-        tdata.acas = acas_passthrough_create(acas_reader);
+#ifdef HAVE_B61
+    if(use_b61) {
+        tdata.acas = acas_passthrough_create();
         if(!tdata.acas) {
-            fprintf(stderr, "Cannot start ACAS passthrough descrambler\n");
+            fprintf(stderr, "Cannot start B61 passthrough descrambler\n");
             fprintf(stderr, "Fall back to raw recording\n");
-            use_acas = FALSE;
+            use_b61 = FALSE;
         }
     }
 #else
-    if(use_acas) {
-        fprintf(stderr, "ACAS passthrough support is not compiled in\n");
+    if(use_b61) {
+        fprintf(stderr, "B61 passthrough support is not compiled in\n");
     }
 #endif
 
@@ -1216,7 +1207,7 @@ while(1){	// http-server add-
     if(use_splitter) {
         split_shutdown(splitter);
     }
-#ifdef HAVE_ACAS
+#ifdef HAVE_B61
     if(!use_http && tdata.acas) {
         acas_passthrough_destroy(tdata.acas);
         tdata.acas = NULL;

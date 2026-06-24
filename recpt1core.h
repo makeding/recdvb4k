@@ -32,7 +32,7 @@
 //#include "pt1_ioctl.h"
 #include "config.h"
 #include "decoder.h"
-#ifdef HAVE_ACAS
+#ifdef HAVE_B61
 #include "acas_passthrough.h"
 #endif
 #include "recpt1.h"
@@ -81,7 +81,7 @@ typedef struct thread_data {
     decoder *decoder; //invariable
     decoder_options *dopt; //invariable
     splitter *splitter; //invariable
-#ifdef HAVE_ACAS
+#ifdef HAVE_B61
     acas_passthrough_t *acas; //invariable
 #endif
 } thread_data;

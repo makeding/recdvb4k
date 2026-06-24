@@ -19,7 +19,7 @@ typedef struct acas_passthrough acas_passthrough_t;
 
 typedef int (*acas_output_callback)(void *opaque, const uint8_t *data, size_t size);
 
-acas_passthrough_t *acas_passthrough_create(const char *reader_name);
+acas_passthrough_t *acas_passthrough_create(void);
 void acas_passthrough_destroy(acas_passthrough_t *ctx);
 int acas_passthrough_process(acas_passthrough_t *ctx,
                              const uint8_t *data,
