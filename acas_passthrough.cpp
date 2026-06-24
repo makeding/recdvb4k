@@ -49,6 +49,7 @@ constexpr uint8_t kMmtTableEcm0 = 0x82;
 constexpr uint8_t kMmtTableEcm1 = 0x83;
 constexpr uint8_t kScrambleEven = 0x02;
 constexpr uint8_t kScrambleOdd = 0x03;
+constexpr size_t kMaxTlvPacketSize = 4096;
 
 constexpr uint8_t kMasterKey[] = {
     0x4F, 0x4C, 0x7C, 0xEB, 0x34, 0xFE, 0xB0, 0xA3,
@@ -68,6 +69,11 @@ uint32_t be32(const uint8_t *p)
            (static_cast<uint32_t>(p[1]) << 16) |
            (static_cast<uint32_t>(p[2]) << 8) |
            static_cast<uint32_t>(p[3]);
+}
+
+bool is_valid_tlv_packet_type(uint8_t packet_type)
+{
+    return packet_type <= 0x04 || packet_type >= 0xfd;
 }
 
 void put_be16(uint8_t *p, uint16_t v)
@@ -581,7 +587,7 @@ private:
             if (buffer.size() < 4) {
                 break;
             }
-            if (buffer[1] > 0x04 && buffer[1] < 0xfd) {
+            if (!is_valid_tlv_packet_type(buffer[1])) {
                 if (output(opaque, buffer.data(), 1) < 0) {
                     return -1;
                 }
@@ -590,6 +596,13 @@ private:
             }
 
             const size_t packet_size = 4 + be16(buffer.data() + 2);
+            if (packet_size > kMaxTlvPacketSize) {
+                if (output(opaque, buffer.data(), 1) < 0) {
+                    return -1;
+                }
+                buffer.erase(buffer.begin());
+                continue;
+            }
             if (buffer.size() < packet_size) {
                 break;
             }
