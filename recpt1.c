@@ -281,6 +281,83 @@ dequeue(QUEUE_T *p_queue)
     return buffer;
 }
 
+typedef struct output_sink {
+    int wfd;
+    int sfd;
+    boolean fileless;
+    boolean use_udp;
+    pthread_t signal_thread;
+    int file_err;
+} output_sink;
+
+static int
+write_output(void *opaque, const uint8_t *data, size_t size)
+{
+    output_sink *sink = (output_sink *)opaque;
+    size_t offset = 0;
+
+    if(!sink->fileless) {
+        while(offset < size) {
+            size_t ws = size - offset < SIZE_CHANK ? size - offset : SIZE_CHANK;
+            ssize_t wc = write(sink->wfd, data + offset, ws);
+            if(wc < 0) {
+                perror("write");
+                sink->file_err = 1;
+                pthread_kill(sink->signal_thread,
+                             errno == EPIPE ? SIGPIPE : SIGUSR2);
+                return -1;
+            }
+            offset += wc;
+        }
+    }
+
+    if(sink->use_udp && sink->sfd != -1) {
+        offset = 0;
+        while(offset < size) {
+            size_t ws = size - offset < SIZE_CHANK ? size - offset : SIZE_CHANK;
+            ssize_t wc = write(sink->sfd, data + offset, ws);
+            if(wc < 0) {
+                if(errno == EPIPE)
+                    pthread_kill(sink->signal_thread, SIGPIPE);
+                return -1;
+            }
+            offset += wc;
+        }
+    }
+
+    return 0;
+}
+
+static int
+process_output(thread_data *tdata,
+               const uint8_t *data,
+               size_t size,
+               output_sink *sink)
+{
+#ifdef HAVE_ACAS
+    if(tdata->acas) {
+        return acas_passthrough_process(tdata->acas, data, size, write_output, sink);
+    }
+#else
+    (void)tdata;
+#endif
+    return write_output(sink, data, size);
+}
+
+static int
+flush_output(thread_data *tdata, output_sink *sink)
+{
+#ifdef HAVE_ACAS
+    if(tdata->acas) {
+        return acas_passthrough_flush(tdata->acas, write_output, sink);
+    }
+#else
+    (void)tdata;
+#endif
+    (void)sink;
+    return 0;
+}
+
 /* this function will be reader thread */
 void *
 reader_func(void *p)
@@ -317,7 +394,6 @@ reader_func(void *p)
     }
 
     while(1) {
-        ssize_t wc = 0;
         int file_err = 0;
         qbuf = dequeue(p_queue);
         /* no entry in the queue */
@@ -412,43 +488,18 @@ reader_func(void *p)
         } /* if */
 
 
-        if(!fileless) {
-            /* write data to output file */
-            int size_remain = buf.size;
-            int offset = 0;
-
-            while(size_remain > 0) {
-                int ws = size_remain < SIZE_CHANK ? size_remain : SIZE_CHANK;
-
-                wc = write(wfd, buf.data + offset, ws);
-                if(wc < 0) {
-                    perror("write");
-                    file_err = 1;
-                    pthread_kill(signal_thread,
-                                 errno == EPIPE ? SIGPIPE : SIGUSR2);
-                    break;
-                }
-                size_remain -= wc;
-                offset += wc;
-            }
-        }
-
-        if(use_udp && sfd != -1) {
-            /* write data to socket */
-            int size_remain = buf.size;
-            int offset = 0;
-            while(size_remain > 0) {
-                int ws = size_remain < SIZE_CHANK ? size_remain : SIZE_CHANK;
-                wc = write(sfd, buf.data + offset, ws);
-                if(wc < 0) {
-                    if(errno == EPIPE)
-                        pthread_kill(signal_thread, SIGPIPE);
-                    break;
-                }
-                size_remain -= wc;
-                offset += wc;
-            }
-        }
+        output_sink sink = {
+            .wfd = wfd,
+            .sfd = sfd,
+            .fileless = fileless,
+            .use_udp = use_udp,
+            .signal_thread = signal_thread,
+            .file_err = 0,
+        };
+        if(process_output(tdata, buf.data, buf.size, &sink) < 0)
+            file_err = 1;
+        if(sink.file_err)
+            file_err = 1;
 
         free(qbuf);
         qbuf = NULL;
@@ -482,22 +533,21 @@ reader_func(void *p)
                 buf.size = splitbuf.buffer_size;
             }
 
-            if(!fileless && !file_err) {
-                wc = write(wfd, buf.data, buf.size);
-                if(wc < 0) {
-                    perror("write");
+            if(!file_err) {
+                output_sink sink = {
+                    .wfd = wfd,
+                    .sfd = sfd,
+                    .fileless = fileless,
+                    .use_udp = use_udp,
+                    .signal_thread = signal_thread,
+                    .file_err = 0,
+                };
+                if(process_output(tdata, buf.data, buf.size, &sink) < 0)
                     file_err = 1;
-                    pthread_kill(signal_thread,
-                                 errno == EPIPE ? SIGPIPE : SIGUSR2);
-                }
-            }
-
-            if(use_udp && sfd != -1) {
-                wc = write(sfd, buf.data, buf.size);
-                if(wc < 0) {
-                    if(errno == EPIPE)
-                        pthread_kill(signal_thread, SIGPIPE);
-                }
+                if(flush_output(tdata, &sink) < 0)
+                    file_err = 1;
+                if(sink.file_err)
+                    file_err = 1;
             }
 
             if(use_splitter) {
@@ -527,6 +577,9 @@ show_usage(char *cmd)
 #else
     fprintf(stderr, "Usage: \n%s [--udp [--addr hostname --port portnumber]] [--http portnumber] [--dev devicenumber] [--lnb voltage] [--sid SID1,SID2] channel rectime destfile\n", cmd);
 #endif
+#ifdef HAVE_ACAS
+    fprintf(stderr, "4K ACAS passthrough: %s --acas [--acas-reader readername] channel rectime destfile\n", cmd);
+#endif
     fprintf(stderr, "\n");
     fprintf(stderr, "Remarks:\n");
     fprintf(stderr, "if rectime  is '-', records indefinitely.\n");
@@ -544,6 +597,10 @@ show_options(void)
     fprintf(stderr, "  --round N:         Specify round number\n");
     fprintf(stderr, "  --strip:           Strip null stream\n");
     fprintf(stderr, "  --EMM:             Instruct EMM operation\n");
+#endif
+#ifdef HAVE_ACAS
+    fprintf(stderr, "--acas:              Decrypt 4K MMT/TLV using ACAS card without MPEG-2 remux\n");
+    fprintf(stderr, "--acas-reader name:  Specify smart card reader for ACAS\n");
 #endif
     fprintf(stderr, "--udp:               Turn on udp broadcasting\n");
     fprintf(stderr, "  --addr hostname:   Hostname or address to connect\n");
@@ -651,9 +708,16 @@ main(int argc, char **argv)
     tdata.tfd = -1;
     tdata.fefd = 0;
     tdata.dmxfd = 0;
+#ifdef HAVE_ACAS
+    tdata.acas = NULL;
+#endif
 
     int result;
     int option_index;
+    enum {
+        OPT_ACAS = 1000,
+        OPT_ACAS_READER,
+    };
     struct option long_options[] = {
 #ifdef HAVE_LIBARIB25
         { "b25",       0, NULL, 'b'},
@@ -674,6 +738,10 @@ main(int argc, char **argv)
         { "version",   0, NULL, 'v'},
         { "list",      0, NULL, 'l'},
         { "sid",       1, NULL, 'i'},
+#ifdef HAVE_ACAS
+        { "acas",      0, NULL, OPT_ACAS},
+        { "acas-reader", 1, NULL, OPT_ACAS_READER},
+#endif
         {0, 0, NULL, 0} /* terminate */
     };
 
@@ -683,6 +751,8 @@ main(int argc, char **argv)
     boolean fileless = FALSE;
     boolean use_stdout = FALSE;
     boolean use_splitter = FALSE;
+    boolean use_acas = FALSE;
+    char *acas_reader = NULL;
     char *host_to = NULL;
     int port_to = 1234;
     int port_http = 12345;
@@ -775,6 +845,17 @@ main(int argc, char **argv)
             use_splitter = TRUE;
             sid_list = optarg;
             break;
+#ifdef HAVE_ACAS
+        case OPT_ACAS:
+            use_acas = TRUE;
+            fprintf(stderr, "enable ACAS passthrough descrambling\n");
+            break;
+        case OPT_ACAS_READER:
+            use_acas = TRUE;
+            acas_reader = optarg;
+            fprintf(stderr, "ACAS smart card reader: %s\n", acas_reader);
+            break;
+#endif
         }
     }
 
@@ -892,6 +973,21 @@ if(use_http){	// http-server add-
             use_b25 = FALSE;
         }
     }
+
+#ifdef HAVE_ACAS
+    if(use_acas) {
+        tdata.acas = acas_passthrough_create(acas_reader);
+        if(!tdata.acas) {
+            fprintf(stderr, "Cannot start ACAS passthrough descrambler\n");
+            fprintf(stderr, "Fall back to raw recording\n");
+            use_acas = FALSE;
+        }
+    }
+#else
+    if(use_acas) {
+        fprintf(stderr, "ACAS passthrough support is not compiled in\n");
+    }
+#endif
 
 while(1){	// http-server add-
 	if(use_http){
@@ -1120,6 +1216,12 @@ while(1){	// http-server add-
     if(use_splitter) {
         split_shutdown(splitter);
     }
+#ifdef HAVE_ACAS
+    if(!use_http && tdata.acas) {
+        acas_passthrough_destroy(tdata.acas);
+        tdata.acas = NULL;
+    }
+#endif
 
 	if(!use_http)	// http-server add
     return 0;

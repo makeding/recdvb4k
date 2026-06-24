@@ -32,6 +32,9 @@
 //#include "pt1_ioctl.h"
 #include "config.h"
 #include "decoder.h"
+#ifdef HAVE_ACAS
+#include "acas_passthrough.h"
+#endif
 #include "recpt1.h"
 #include "mkpath.h"
 #include "tssplitter_lite.h"
@@ -78,6 +81,9 @@ typedef struct thread_data {
     decoder *decoder; //invariable
     decoder_options *dopt; //invariable
     splitter *splitter; //invariable
+#ifdef HAVE_ACAS
+    acas_passthrough_t *acas; //invariable
+#endif
 } thread_data;
 
 extern const char *version;
