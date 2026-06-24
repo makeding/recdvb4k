@@ -25,6 +25,8 @@
 #define  CS_20  21
 #define  CS_22  22
 #define  CS_24  23
+#define  BS4K_08 39
+#define  BS8K_14 42
 
 ISDB_T_FREQ_CONV_TABLE    isdb_t_conv_table[] = {
     { BS_01, CHTYPE_SATELLITE, 0, 0x4010, "151"},  /* BS朝日1 */
@@ -60,6 +62,16 @@ ISDB_T_FREQ_CONV_TABLE    isdb_t_conv_table[] = {
     { BS_23, CHTYPE_SATELLITE, 0, 0x4770, "256"},  /* ディズニーch */
     { BS_23, CHTYPE_SATELLITE, 1, 0x4971, "265"},  /* BSよしもと */
     { BS_23, CHTYPE_SATELLITE, 3, 0x4973, "260"},  /* J：COM BS */
+
+    { BS_07, CHTYPE_SATELLITE, 0, 0xB070, "BS07_0"},  /* BS朝日 4K */
+    { BS_07, CHTYPE_SATELLITE, 1, 0xB071, "BS07_1"},  /* BSテレ東 4K */
+    { BS_07, CHTYPE_SATELLITE, 2, 0xB072, "BS07_2"},  /* BS日テレ 4K */
+    { BS_17, CHTYPE_SATELLITE, 0, 0xB110, "BS17_0"},  /* NHK BSプレミアム4K */
+    { BS_17, CHTYPE_SATELLITE, 1, 0xB111, "BS17_1"},  /* BS-TBS 4K */
+    { BS_17, CHTYPE_SATELLITE, 2, 0xB112, "BS17_2"},  /* BSフジ 4K */
+    { BS4K_08, CHTYPE_SATELLITE, 0, 0xB080, "BS08_0"},  /* ショップチャンネル 4K */
+    { BS4K_08, CHTYPE_SATELLITE, 1, 0xB081, "BS08_1"},  /* 4K QVC */
+    { BS8K_14, CHTYPE_SATELLITE, 0, 0xB0E0, "BS14_0"},  /* NHK BS 8K */
 
     { CS_02, CHTYPE_SATELLITE, 0, 0x6020, "CS2" },  /* ND2 */
     { CS_04, CHTYPE_SATELLITE, 0, 0x7040, "CS4" },  /* ND4 */
@@ -224,6 +236,16 @@ char *helpChList[] = {
 	"260 ch : J：COM BS",
 	"265 ch : BSよしもと",
 	"531 ch : 放送大学ラジオ",
+	"",
+	"BS07_0 : BS朝日 4K",
+	"BS07_1 : BSテレ東 4K",
+	"BS07_2 : BS日テレ 4K",
+	"BS17_0 : NHK BSプレミアム4K",
+	"BS17_1 : BS-TBS 4K",
+	"BS17_2 : BSフジ 4K",
+	"BS08_0 : ショップチャンネル 4K",
+	"BS08_1 : 4K QVC",
+	"BS14_0 : NHK BS 8K",
 	"",
 	" 55 ch : ショップチャンネル",
 	"161 ch : QVC",
