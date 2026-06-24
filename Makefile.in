@@ -5,10 +5,10 @@ bindir = @bindir@
 CC = @CC@
 CXX = @CXX@
 
-TARGET = recdvb
-TARGET2 = recpt1ctl
-TARGET3 = chkdvbsignal
-TARGET4 = tssplitter_lite
+TARGET = recdvb4k
+TARGET2 = recpt1ctl4k
+TARGET3 = chkdvbsignal4k
+TARGET4 = tssplitter_lite4k
 TARGETS = $(TARGET) $(TARGET2) $(TARGET3) $(TARGET4)
 RELEASE_VERSION = "1.2.1.1"
 
@@ -79,7 +79,7 @@ version.h:
 		echo "const char *version = \"$(RELEASE_VERSION)\";" > $@; \
 	fi
 
-install: $(TARGET)
+install: $(TARGETS)
 	install -m 755 $(TARGETS) $(DESTDIR)$(bindir)
 
 -include .deps

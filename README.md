@@ -86,7 +86,7 @@
 
 ```
   % ./configure --enable-b25 --enable-b61 --with-dantto4k-src=/path/to/dantto4k/src
-  % recdvb --b61 BS4K_... 10 out.tlv
+  % recdvb4k --b61 BS4K_... 10 out.tlv
 ```
 
 ## 動作確認環境
