@@ -835,7 +835,7 @@ main(int argc, char **argv)
             break;
         case 'd':
             dev_num = atoi(optarg);
-            fprintf(stderr, "using device: /dev/dvb/adapter%d", dev_num);
+            fprintf(stderr, "using device: /dev/dvb/adapter%d\n", dev_num);
             break;
         case 'i':
             use_splitter = TRUE;

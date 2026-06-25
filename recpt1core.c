@@ -276,7 +276,7 @@ set_frequency(thread_data *tdata, boolean msg_view)
         prop[3].cmd = DTV_TUNE;
         props.props = prop;
         props.num = 4;
-        fprintf(stderr,"tuning to %d MHz\n",prop[1].u.data / 1000);
+        fprintf(stderr,"tuning %s to %d MHz (tsid=0x%X)\n", tdata->table->parm_freq, prop[1].u.data / 1000, tdata->table->tsid);
 	}
     if(ioctl(tdata->fefd, FE_SET_PROPERTY, &props) == -1) {
         perror("ioctl FE_SET_PROPERTY");
