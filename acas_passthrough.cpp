@@ -49,7 +49,7 @@ constexpr uint8_t kMmtTableEcm0 = 0x82;
 constexpr uint8_t kMmtTableEcm1 = 0x83;
 constexpr uint8_t kScrambleEven = 0x02;
 constexpr uint8_t kScrambleOdd = 0x03;
-constexpr size_t kMaxTlvPacketSize = 4096;
+constexpr size_t kMaxTlvPacketSize = 4 + 0xffff;
 
 constexpr uint8_t kMasterKey[] = {
     0x4F, 0x4C, 0x7C, 0xEB, 0x34, 0xFE, 0xB0, 0xA3,
@@ -305,9 +305,13 @@ public:
                          uint16_t packet_id,
                          uint32_t packet_sequence_number,
                          uint8_t *payload,
-                         size_t payload_size)
+                         size_t payload_size,
+                         size_t decrypt_size)
     {
-        if (payload_size <= 8) {
+        if (payload_size < decrypt_size) {
+            return false;
+        }
+        if (decrypt_size <= 8) {
             return false;
         }
 
@@ -327,7 +331,7 @@ public:
 
         AES_ctx ctx;
         AES_init_ctx_iv(&ctx, key_ptr->data(), iv.data());
-        AES_CTR_xcrypt_buffer(&ctx, payload + 8, payload_size - 8);
+        AES_CTR_xcrypt_buffer(&ctx, payload + 8, decrypt_size - 8);
         return true;
     }
 
@@ -434,8 +438,14 @@ struct MmtpInfo {
     uint32_t sequence = 0;
     uint8_t payload_type = 0;
     uint8_t scramble_flag = 0;
+    uint8_t *scramble_control = nullptr;
+    uint8_t *extension_length_field = nullptr;
+    uint8_t *b61_multi_length_field = nullptr;
+    uint8_t *payload_length_field = nullptr;
+    bool has_message_authentication = false;
     size_t payload_offset = 0;
     size_t payload_size = 0;
+    size_t decrypt_size = 0;
 };
 
 bool parse_mmtp(uint8_t *data, size_t size, MmtpInfo& out)
@@ -463,6 +473,7 @@ bool parse_mmtp(uint8_t *data, size_t size, MmtpInfo& out)
             return false;
         }
         const uint16_t extension_type = be16(data + pos);
+        out.extension_length_field = data + pos + 2;
         const uint16_t extension_length = be16(data + pos + 2);
         pos += 4;
         if (size < pos + extension_length) {
@@ -475,6 +486,7 @@ bool parse_mmtp(uint8_t *data, size_t size, MmtpInfo& out)
             while (ext_end - ext_pos >= 5) {
                 const uint16_t multi_type = be16(data + ext_pos) & 0x7fff;
                 const bool multi_end = (data[ext_pos] & 0x80) != 0;
+                uint8_t *multi_length_field = data + ext_pos + 2;
                 const uint16_t multi_length = be16(data + ext_pos + 2);
                 ext_pos += 4;
                 if (ext_end - ext_pos < multi_length) {
@@ -482,7 +494,27 @@ bool parse_mmtp(uint8_t *data, size_t size, MmtpInfo& out)
                 }
 
                 if (multi_type == 0x0001 && multi_length >= 1) {
-                    out.scramble_flag = (data[ext_pos] & 0x18) >> 3;
+                    out.scramble_control = data + ext_pos;
+                    out.scramble_flag = (*out.scramble_control & 0x18) >> 3;
+
+                    const bool has_scramble_system_id = (*out.scramble_control & 0x04) != 0;
+                    const bool has_message_authentication = (*out.scramble_control & 0x02) != 0;
+                    size_t b61_pos = ext_pos + 1;
+                    if (has_scramble_system_id) {
+                        if (b61_pos >= ext_pos + multi_length) {
+                            return false;
+                        }
+                        ++b61_pos;
+                    }
+                    if (has_message_authentication) {
+                        if (ext_pos + multi_length - b61_pos < 2) {
+                            return false;
+                        }
+                        out.has_message_authentication = true;
+                        out.b61_multi_length_field = multi_length_field;
+                        out.payload_length_field = data + b61_pos;
+                        out.decrypt_size = be16(data + b61_pos);
+                    }
                 }
 
                 ext_pos += multi_length;
@@ -496,6 +528,9 @@ bool parse_mmtp(uint8_t *data, size_t size, MmtpInfo& out)
 
     out.payload_offset = pos;
     out.payload_size = size - pos;
+    if (out.decrypt_size == 0 || out.decrypt_size > out.payload_size) {
+        out.decrypt_size = out.payload_size;
+    }
     return true;
 }
 
@@ -637,7 +672,7 @@ private:
             }
 
             std::vector<uint8_t> packet(buffer.begin(), buffer.begin() + packet_size);
-            process_tlv(packet.data(), packet.size());
+            process_tlv(packet);
             if (output(opaque, packet.data(), packet.size()) < 0) {
                 return -1;
             }
@@ -653,13 +688,14 @@ private:
         return 0;
     }
 
-    void process_tlv(uint8_t *packet, size_t packet_size)
+    void process_tlv(std::vector<uint8_t>& packet)
     {
+        const size_t packet_size = packet.size();
         if (packet_size < 7 || packet[1] != kTlvHeaderCompressedIpPacket) {
             return;
         }
 
-        uint8_t *tlv_data = packet + 4;
+        uint8_t *tlv_data = packet.data() + 4;
         size_t tlv_size = packet_size - 4;
         if (tlv_size < 3) {
             return;
@@ -688,8 +724,33 @@ private:
 
         if (info.scramble_flag == kScrambleEven || info.scramble_flag == kScrambleOdd) {
             if (!acas.decrypt_payload(info.scramble_flag, info.packet_id, info.sequence,
-                                      payload, info.payload_size)) {
+                                      payload, info.payload_size, info.decrypt_size)) {
                 return;
+            }
+            if (info.scramble_control) {
+                *info.scramble_control &= static_cast<uint8_t>(~0x18);
+            }
+            if (info.has_message_authentication && info.extension_length_field &&
+                info.b61_multi_length_field && info.payload_length_field) {
+                const size_t payload_abs = static_cast<size_t>(payload - packet.data());
+                const size_t payload_length_abs = static_cast<size_t>(info.payload_length_field - packet.data());
+                const size_t auth_size = info.payload_size - info.decrypt_size;
+                const uint16_t extension_length = be16(info.extension_length_field);
+                const uint16_t b61_multi_length = be16(info.b61_multi_length_field);
+                if (extension_length >= 2 && b61_multi_length >= 3 &&
+                    payload_abs + info.payload_size <= packet.size()) {
+                    put_be16(info.extension_length_field, extension_length - 2);
+                    put_be16(info.b61_multi_length_field, b61_multi_length - 2);
+                    *info.scramble_control &= static_cast<uint8_t>(~0x02);
+
+                    if (auth_size > 0) {
+                        packet.erase(packet.begin() + payload_abs + info.decrypt_size,
+                                     packet.begin() + payload_abs + info.payload_size);
+                    }
+                    packet.erase(packet.begin() + payload_length_abs,
+                                 packet.begin() + payload_length_abs + 2);
+                    put_be16(packet.data() + 2, static_cast<uint16_t>(packet.size() - 4));
+                }
             }
         }
     }
