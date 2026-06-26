@@ -73,7 +73,16 @@ uint32_t be32(const uint8_t *p)
 
 bool is_valid_tlv_packet_type(uint8_t packet_type)
 {
-    return packet_type <= 0x04 || packet_type >= 0xfd;
+    switch (packet_type) {
+    case 0x01: // IPv4 packet
+    case 0x02: // IPv6 packet
+    case 0x03: // Header-compressed IP packet
+    case 0xfe: // Transmission control signal packet
+    case 0xff: // Null packet
+        return true;
+    default:
+        return false;
+    }
 }
 
 void put_be16(uint8_t *p, uint16_t v)
@@ -453,14 +462,34 @@ bool parse_mmtp(uint8_t *data, size_t size, MmtpInfo& out)
         if (size < pos + 4) {
             return false;
         }
+        const uint16_t extension_type = be16(data + pos);
         const uint16_t extension_length = be16(data + pos + 2);
         pos += 4;
         if (size < pos + extension_length) {
             return false;
         }
 
-        if (extension_length >= 5 && (be16(data + pos) & 0x7fff) == 0x0001) {
-            out.scramble_flag = (data[pos + 4] & 0x18) >> 3;
+        if (extension_type == 0x0000) {
+            size_t ext_pos = pos;
+            const size_t ext_end = pos + extension_length;
+            while (ext_end - ext_pos >= 5) {
+                const uint16_t multi_type = be16(data + ext_pos) & 0x7fff;
+                const bool multi_end = (data[ext_pos] & 0x80) != 0;
+                const uint16_t multi_length = be16(data + ext_pos + 2);
+                ext_pos += 4;
+                if (ext_end - ext_pos < multi_length) {
+                    return false;
+                }
+
+                if (multi_type == 0x0001 && multi_length >= 1) {
+                    out.scramble_flag = (data[ext_pos] & 0x18) >> 3;
+                }
+
+                ext_pos += multi_length;
+                if (multi_end) {
+                    break;
+                }
+            }
         }
         pos += extension_length;
     }
