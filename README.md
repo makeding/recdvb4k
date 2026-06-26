@@ -3,7 +3,7 @@
 本プログラムは、[dogeel/recdvb](https://github.com/dogeel/recdvb) の
 フォークで、その目的はチャンネル情報の更新です。
 
-## 変更点は次のものです。
+## この fork の特徴
 
 * チャンネル情報の定義部分を別ファイルとし、
    別ツール( https://github.com/kaikoma-soft/mkChConvTable )
@@ -11,6 +11,46 @@
 * チャンネル情報を最新のものにする。
 * コンパイル時の警告を無くす。
 * 文字コードを UTF-8 に統一
+* DVB-S3/高度 BS 系のチャンネル定義を追加し、`recdvb4k` で MMT/TLV
+  ストリームをそのまま録画できるようにする。
+* ARIB STD-B61 の 4K/8K MMT/TLV 向け ACAS デスクランブルを
+  passthrough 形式で実装する。`--b61` 指定時は、PC/SC 経由で挿入済み
+  ACAS カードを自動検出し、MMTP ペイロードを復号した TLV ストリームを
+  出力する。
+* B61 のマルチタイプヘッダー拡張を解析し、MMT スクランブル制御
+  even/odd、メッセージ認証付き payload length、MMT スクランブル初期値
+  情報を扱う。
+
+### B61/ACAS passthrough について
+
+この fork の B61 実装は、テレビ受信機としての完全な B61 実装ではなく、
+録画・配信パイプラインで扱いやすい TLV passthrough を目的とした実装です。
+
+実装している主な処理:
+
+* MMT/TLV 内の M2 セクションメッセージから ECM を取得し、ACAS カードへ
+  APDU として転送する。
+* ACAS 応答から odd/even のスクランブル鍵を取得する。
+* MMTP packet id と packet sequence number、または B61 拡張領域の
+  MMT スクランブル初期値情報から AES-CTR の初期カウンタを作る。
+* MMTP ペイロードデータ部を AES-CTR で復号する。
+* downstream の MMTS/MSE プレイヤーが扱えるように、復号後の TLV では
+  MMT スクランブル制御ビットを clear する。
+* メッセージ認証コード付きパケットでは、認証コードをメディア payload と
+  誤認しないように payload length を参照し、passthrough 出力から
+  認証コードと B61 payload length フィールドを取り除く。
+
+現時点の制限:
+
+* 暗号アルゴリズムは AES のみ。Camellia は未実装。
+* スクランブル方式識別子の完全な優先順位判定
+  (MMTP header extension -> MP table descriptor -> CA table descriptor)
+  は未実装。
+* メッセージ認証コードは passthrough のために剥離するが、標準にある
+  改ざん検出としての MAC 検証は未実装。
+* EMM や複数 CA_system_id の完全な受信機処理は実装していない。
+* TLV passthrough のためにヘッダーを書き換えるため、出力は「元の放送 TLV
+  そのもの」ではなく「復号済みとして downstream へ渡すための TLV」です。
 
 ## fork 直後からの変更履歴
 
