@@ -306,7 +306,8 @@ public:
                          uint32_t packet_sequence_number,
                          uint8_t *payload,
                          size_t payload_size,
-                         size_t decrypt_size)
+                         size_t decrypt_size,
+                         const std::array<uint8_t, 16> *initial_counter)
     {
         if (payload_size < decrypt_size) {
             return false;
@@ -326,8 +327,12 @@ public:
         }
 
         std::array<uint8_t, 16> iv{};
-        put_be16(iv.data(), packet_id);
-        put_be32(iv.data() + 2, packet_sequence_number);
+        if (initial_counter) {
+            iv = *initial_counter;
+        } else {
+            put_be16(iv.data(), packet_id);
+            put_be32(iv.data() + 2, packet_sequence_number);
+        }
 
         AES_ctx ctx;
         AES_init_ctx_iv(&ctx, key_ptr->data(), iv.data());
@@ -443,6 +448,8 @@ struct MmtpInfo {
     uint8_t *b61_multi_length_field = nullptr;
     uint8_t *payload_length_field = nullptr;
     bool has_message_authentication = false;
+    bool has_initial_counter = false;
+    std::array<uint8_t, 16> initial_counter{};
     size_t payload_offset = 0;
     size_t payload_size = 0;
     size_t decrypt_size = 0;
@@ -499,6 +506,7 @@ bool parse_mmtp(uint8_t *data, size_t size, MmtpInfo& out)
 
                     const bool has_scramble_system_id = (*out.scramble_control & 0x04) != 0;
                     const bool has_message_authentication = (*out.scramble_control & 0x02) != 0;
+                    const bool has_initial_counter = (*out.scramble_control & 0x01) != 0;
                     size_t b61_pos = ext_pos + 1;
                     if (has_scramble_system_id) {
                         if (b61_pos >= ext_pos + multi_length) {
@@ -514,6 +522,16 @@ bool parse_mmtp(uint8_t *data, size_t size, MmtpInfo& out)
                         out.b61_multi_length_field = multi_length_field;
                         out.payload_length_field = data + b61_pos;
                         out.decrypt_size = be16(data + b61_pos);
+                        b61_pos += 2;
+                    }
+                    if (has_initial_counter) {
+                        if (ext_pos + multi_length - b61_pos < out.initial_counter.size()) {
+                            return false;
+                        }
+                        std::copy(data + b61_pos,
+                                  data + b61_pos + out.initial_counter.size(),
+                                  out.initial_counter.begin());
+                        out.has_initial_counter = true;
                     }
                 }
 
@@ -724,7 +742,8 @@ private:
 
         if (info.scramble_flag == kScrambleEven || info.scramble_flag == kScrambleOdd) {
             if (!acas.decrypt_payload(info.scramble_flag, info.packet_id, info.sequence,
-                                      payload, info.payload_size, info.decrypt_size)) {
+                                      payload, info.payload_size, info.decrypt_size,
+                                      info.has_initial_counter ? &info.initial_counter : nullptr)) {
                 return;
             }
             if (info.scramble_control) {
