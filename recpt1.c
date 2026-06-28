@@ -572,8 +572,12 @@ void
 show_usage(char *cmd)
 {
     fprintf(stderr, "%s Ver %s\n", cmd, version);
-#ifdef HAVE_LIBARIB25
+#if defined(HAVE_LIBARIB25) && defined(HAVE_B61)
     fprintf(stderr, "Usage: \n%s [--b25 [--round N] [--strip] [--EMM]] [--udp [--addr hostname --port portnumber]] [--http portnumber] [--dev devicenumber] [--lnb voltage] [--sid SID1,SID2] channel rectime destfile\n", cmd);
+#elif defined(HAVE_LIBARIB25)
+    fprintf(stderr, "Usage: \n%s [--b25 [--round N] [--strip] [--EMM]] [--udp [--addr hostname --port portnumber]] [--http portnumber] [--dev devicenumber] [--lnb voltage] [--sid SID1,SID2] channel rectime destfile\n", cmd);
+#elif defined(HAVE_B61)
+    fprintf(stderr, "Usage: \n%s [[--b61] [--strip]] [--udp [--addr hostname --port portnumber]] [--http portnumber] [--dev devicenumber] [--lnb voltage] [--sid SID1,SID2] channel rectime destfile\n", cmd);
 #else
     fprintf(stderr, "Usage: \n%s [--udp [--addr hostname --port portnumber]] [--http portnumber] [--dev devicenumber] [--lnb voltage] [--sid SID1,SID2] channel rectime destfile\n", cmd);
 #endif
@@ -595,8 +599,10 @@ show_options(void)
 #ifdef HAVE_LIBARIB25
     fprintf(stderr, "--b25:               Decrypt using BCAS card\n");
     fprintf(stderr, "  --round N:         Specify round number\n");
-    fprintf(stderr, "  --strip:           Strip null stream\n");
     fprintf(stderr, "  --EMM:             Instruct EMM operation\n");
+#endif
+#if defined(HAVE_LIBARIB25) || defined(HAVE_B61)
+    fprintf(stderr, "--strip:             Strip TS null packets for B25 or TLV null packets for B61\n");
 #endif
 #ifdef HAVE_B61
     fprintf(stderr, "--b61:               Decrypt 4K MMT/TLV using an automatically detected ACAS card\n");
@@ -721,9 +727,11 @@ main(int argc, char **argv)
         { "b25",       0, NULL, 'b'},
         { "B25",       0, NULL, 'b'},
         { "round",     1, NULL, 'r'},
-        { "strip",     0, NULL, 's'},
         { "emm",       0, NULL, 'm'},
         { "EMM",       0, NULL, 'm'},
+#endif
+#if defined(HAVE_LIBARIB25) || defined(HAVE_B61)
+        { "strip",     0, NULL, 's'},
 #endif
         { "LNB",       1, NULL, 'n'},
         { "lnb",       1, NULL, 'n'},
@@ -770,7 +778,7 @@ main(int argc, char **argv)
             break;
         case 's':
             dopt.strip = TRUE;
-            fprintf(stderr, "enable B25 strip\n");
+            fprintf(stderr, "enable null packet strip\n");
             break;
         case 'm':
             dopt.emm = TRUE;
@@ -972,6 +980,8 @@ if(use_http){	// http-server add-
             fprintf(stderr, "Cannot start B61 passthrough descrambler\n");
             fprintf(stderr, "Fall back to raw recording\n");
             use_b61 = FALSE;
+        } else {
+            acas_passthrough_set_strip(tdata.acas, dopt.strip);
         }
     }
 #else

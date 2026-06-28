@@ -43,7 +43,11 @@
 namespace {
 
 constexpr uint8_t kTlvSync = 0x7f;
-constexpr uint8_t kTlvHeaderCompressedIpPacket = 0x03;
+constexpr uint8_t kTlvPacketTypeIpv4 = 0x01;
+constexpr uint8_t kTlvPacketTypeIpv6 = 0x02;
+constexpr uint8_t kTlvPacketTypeCompressedIp = 0x03;
+constexpr uint8_t kTlvPacketTypeControl = 0xfe;
+constexpr uint8_t kTlvPacketTypeNull = 0xff;
 constexpr uint8_t kMmtpPayloadControlMessage = 0x02;
 constexpr uint8_t kMmtTableEcm0 = 0x82;
 constexpr uint8_t kMmtTableEcm1 = 0x83;
@@ -74,15 +78,20 @@ uint32_t be32(const uint8_t *p)
 bool is_valid_tlv_packet_type(uint8_t packet_type)
 {
     switch (packet_type) {
-    case 0x01: // IPv4 packet
-    case 0x02: // IPv6 packet
-    case 0x03: // Header-compressed IP packet
-    case 0xfe: // Transmission control signal packet
-    case 0xff: // Null packet
+    case kTlvPacketTypeIpv4:
+    case kTlvPacketTypeIpv6:
+    case kTlvPacketTypeCompressedIp:
+    case kTlvPacketTypeControl:
+    case kTlvPacketTypeNull:
         return true;
     default:
         return false;
     }
+}
+
+bool is_tlv_null_packet(uint8_t packet_type)
+{
+    return packet_type == kTlvPacketTypeNull;
 }
 
 void put_be16(uint8_t *p, uint16_t v)
@@ -641,6 +650,11 @@ void process_signaling_payload(uint16_t packet_id, const uint8_t *payload, size_
 
 class Passthrough {
 public:
+    void set_strip(bool strip)
+    {
+        strip_null_packets = strip;
+    }
+
     int process(const uint8_t *data, size_t size, acas_output_callback output, void *opaque)
     {
         buffer.insert(buffer.end(), data, data + size);
@@ -669,7 +683,8 @@ private:
             if (buffer.size() < 4) {
                 break;
             }
-            if (!is_valid_tlv_packet_type(buffer[1])) {
+            const uint8_t packet_type = buffer[1];
+            if (!is_valid_tlv_packet_type(packet_type)) {
                 if (output(opaque, buffer.data(), 1) < 0) {
                     return -1;
                 }
@@ -687,6 +702,10 @@ private:
             }
             if (buffer.size() < packet_size) {
                 break;
+            }
+            if (strip_null_packets && is_tlv_null_packet(packet_type)) {
+                buffer.erase(buffer.begin(), buffer.begin() + packet_size);
+                continue;
             }
 
             std::vector<uint8_t> packet(buffer.begin(), buffer.begin() + packet_size);
@@ -709,7 +728,7 @@ private:
     void process_tlv(std::vector<uint8_t>& packet)
     {
         const size_t packet_size = packet.size();
-        if (packet_size < 7 || packet[1] != kTlvHeaderCompressedIpPacket) {
+        if (packet_size < 7 || packet[1] != kTlvPacketTypeCompressedIp) {
             return;
         }
 
@@ -777,6 +796,7 @@ private:
     Acas acas;
     std::vector<uint8_t> buffer;
     std::map<uint16_t, std::vector<uint8_t>> fragments;
+    bool strip_null_packets = false;
 };
 
 } // namespace
@@ -800,6 +820,13 @@ extern "C" void acas_passthrough_destroy(acas_passthrough_t *ctx)
     delete ctx;
 }
 
+extern "C" void acas_passthrough_set_strip(acas_passthrough_t *ctx, int strip)
+{
+    if (ctx) {
+        ctx->impl.set_strip(strip != 0);
+    }
+}
+
 extern "C" int acas_passthrough_process(acas_passthrough_t *ctx,
                                          const uint8_t *data,
                                          size_t size,
@@ -821,3 +848,55 @@ extern "C" int acas_passthrough_flush(acas_passthrough_t *ctx,
     }
     return ctx->impl.flush(output, opaque);
 }
+
+#ifdef ACAS_PASSTHROUGH_TEST
+namespace {
+
+int collect_output(void *opaque, const uint8_t *data, size_t size)
+{
+    auto *out = static_cast<std::vector<uint8_t> *>(opaque);
+    out->insert(out->end(), data, data + size);
+    return 0;
+}
+
+std::vector<uint8_t> run_passthrough(bool strip, const std::vector<std::vector<uint8_t>>& chunks)
+{
+    Passthrough passthrough;
+    std::vector<uint8_t> out;
+    passthrough.set_strip(strip);
+    for (const auto& chunk : chunks) {
+        if (passthrough.process(chunk.data(), chunk.size(), collect_output, &out) < 0) {
+            throw std::runtime_error("process failed");
+        }
+    }
+    if (passthrough.flush(collect_output, &out) < 0) {
+        throw std::runtime_error("flush failed");
+    }
+    return out;
+}
+
+void require_equal(const std::vector<uint8_t>& actual, const std::vector<uint8_t>& expected)
+{
+    if (actual != expected) {
+        throw std::runtime_error("unexpected passthrough output");
+    }
+}
+
+} // namespace
+
+int main()
+{
+    const std::vector<uint8_t> ipv4 = { kTlvSync, kTlvPacketTypeIpv4, 0x00, 0x02, 0xaa, 0xbb };
+    const std::vector<uint8_t> null = { kTlvSync, kTlvPacketTypeNull, 0x00, 0x03, 0xff, 0xff, 0xff };
+    std::vector<uint8_t> combined = ipv4;
+    combined.insert(combined.end(), null.begin(), null.end());
+    combined.insert(combined.end(), ipv4.begin(), ipv4.end());
+
+    require_equal(run_passthrough(false, { combined }), combined);
+    std::vector<uint8_t> stripped = ipv4;
+    stripped.insert(stripped.end(), ipv4.begin(), ipv4.end());
+    require_equal(run_passthrough(true, { { combined.begin(), combined.begin() + 5 },
+                                          { combined.begin() + 5, combined.end() } }), stripped);
+    return 0;
+}
+#endif

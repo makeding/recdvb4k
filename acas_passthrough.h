@@ -21,6 +21,7 @@ typedef int (*acas_output_callback)(void *opaque, const uint8_t *data, size_t si
 
 acas_passthrough_t *acas_passthrough_create(void);
 void acas_passthrough_destroy(acas_passthrough_t *ctx);
+void acas_passthrough_set_strip(acas_passthrough_t *ctx, int strip);
 int acas_passthrough_process(acas_passthrough_t *ctx,
                              const uint8_t *data,
                              size_t size,
