@@ -121,12 +121,14 @@
 ```
 
 4K B61/MMT-TLV の ACAS デスクランブルを有効にする場合は、dantto4k の `src`
-ディレクトリを指定してビルドします。実行時は `--b61` を指定すると、
-挿入済みの ACAS カードを自動検出します。
+ディレクトリを指定してビルドします。standalone Asio も必要です。実行時は
+`--b61` を指定すると、挿入済みの ACAS カードを自動検出します。
+内網上の casproxyserver を使う場合は `--cas-proxy host:port` を追加します。
 
 ```
   % ./configure --enable-b25 --enable-b61 --with-dantto4k-src=/path/to/dantto4k/src
   % recdvb4k --b61 BS4K_... 10 out.tlv
+  % recdvb4k --b61 --cas-proxy 192.168.6.253:24000 BS4K_... 10 out.tlv
 ```
 
 ## 動作確認環境

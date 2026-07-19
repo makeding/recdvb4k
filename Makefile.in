@@ -68,6 +68,9 @@ acas_passthrough.o: acas_passthrough.cpp acas_passthrough.h
 dantto_aes.o: @DANTTO4K_SRC@/aes.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
+dantto_cas_proxy_client.o: @DANTTO4K_SRC@/casProxyClient.cpp @DANTTO4K_SRC@/casProxyClient.h @DANTTO4K_SRC@/casProxy.h
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
 $(DEPEND): version.h
 	$(CC) -MM $(REC_OBJS:.o=.c) $(OBJS2:.o=.c) $(CPPFLAGS) > $@
 

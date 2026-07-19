@@ -573,16 +573,16 @@ show_usage(char *cmd)
 {
     fprintf(stderr, "%s Ver %s\n", cmd, version);
 #if defined(HAVE_LIBARIB25) && defined(HAVE_B61)
-    fprintf(stderr, "Usage: \n%s [--b25 [--round N] [--strip] [--EMM]] [--udp [--addr hostname --port portnumber]] [--http portnumber] [--dev devicenumber] [--lnb voltage] [--sid SID1,SID2] channel rectime destfile\n", cmd);
+    fprintf(stderr, "Usage: \n%s [[--b25 [--round N] [--EMM]] | [--b61 [--cas-proxy host:port]]] [--strip] [--udp [--addr hostname --port portnumber]] [--http portnumber] [--dev devicenumber] [--lnb voltage] [--sid SID1,SID2] channel rectime destfile\n", cmd);
 #elif defined(HAVE_LIBARIB25)
     fprintf(stderr, "Usage: \n%s [--b25 [--round N] [--strip] [--EMM]] [--udp [--addr hostname --port portnumber]] [--http portnumber] [--dev devicenumber] [--lnb voltage] [--sid SID1,SID2] channel rectime destfile\n", cmd);
 #elif defined(HAVE_B61)
-    fprintf(stderr, "Usage: \n%s [[--b61] [--strip]] [--udp [--addr hostname --port portnumber]] [--http portnumber] [--dev devicenumber] [--lnb voltage] [--sid SID1,SID2] channel rectime destfile\n", cmd);
+    fprintf(stderr, "Usage: \n%s [[--b61 [--cas-proxy host:port]] [--strip]] [--udp [--addr hostname --port portnumber]] [--http portnumber] [--dev devicenumber] [--lnb voltage] [--sid SID1,SID2] channel rectime destfile\n", cmd);
 #else
     fprintf(stderr, "Usage: \n%s [--udp [--addr hostname --port portnumber]] [--http portnumber] [--dev devicenumber] [--lnb voltage] [--sid SID1,SID2] channel rectime destfile\n", cmd);
 #endif
 #ifdef HAVE_B61
-    fprintf(stderr, "4K B61 passthrough: %s --b61 channel rectime destfile\n", cmd);
+    fprintf(stderr, "4K B61 passthrough: %s --b61 [--cas-proxy host:port] channel rectime destfile\n", cmd);
 #endif
     fprintf(stderr, "\n");
     fprintf(stderr, "Remarks:\n");
@@ -606,6 +606,7 @@ show_options(void)
 #endif
 #ifdef HAVE_B61
     fprintf(stderr, "--b61:               Decrypt 4K MMT/TLV using an automatically detected ACAS card\n");
+    fprintf(stderr, "--cas-proxy host:port: Use an ACAS card through casproxyserver\n");
 #endif
     fprintf(stderr, "--udp:               Turn on udp broadcasting\n");
     fprintf(stderr, "  --addr hostname:   Hostname or address to connect\n");
@@ -721,6 +722,7 @@ main(int argc, char **argv)
     int option_index;
     enum {
         OPT_B61 = 1000,
+        OPT_CAS_PROXY,
     };
     struct option long_options[] = {
 #ifdef HAVE_LIBARIB25
@@ -746,6 +748,7 @@ main(int argc, char **argv)
         { "sid",       1, NULL, 'i'},
 #ifdef HAVE_B61
         { "b61",      0, NULL, OPT_B61},
+        { "cas-proxy", 1, NULL, OPT_CAS_PROXY},
 #endif
         {0, 0, NULL, 0} /* terminate */
     };
@@ -757,6 +760,7 @@ main(int argc, char **argv)
     boolean use_stdout = FALSE;
     boolean use_splitter = FALSE;
     boolean use_b61 = FALSE;
+    char *cas_proxy = NULL;
     char *host_to = NULL;
     int port_to = 1234;
     int port_http = 12345;
@@ -853,6 +857,10 @@ main(int argc, char **argv)
         case OPT_B61:
             use_b61 = TRUE;
             fprintf(stderr, "enable B61 passthrough descrambling\n");
+            break;
+        case OPT_CAS_PROXY:
+            cas_proxy = optarg;
+            fprintf(stderr, "use CAS proxy: %s\n", cas_proxy);
             break;
 #endif
         }
@@ -981,7 +989,15 @@ if(use_http){	// http-server add-
             fprintf(stderr, "Fall back to raw recording\n");
             use_b61 = FALSE;
         } else {
-            acas_passthrough_set_strip(tdata.acas, dopt.strip);
+            if(cas_proxy && acas_passthrough_set_proxy(tdata.acas, cas_proxy) != 0) {
+                fprintf(stderr, "Cannot configure CAS proxy\n");
+                fprintf(stderr, "Fall back to raw recording\n");
+                acas_passthrough_destroy(tdata.acas);
+                tdata.acas = NULL;
+                use_b61 = FALSE;
+            } else {
+                acas_passthrough_set_strip(tdata.acas, dopt.strip);
+            }
         }
     }
 #else

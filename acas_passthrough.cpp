@@ -23,6 +23,7 @@
 #include <cstring>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <random>
 #include <stdexcept>
 #include <string>
@@ -38,6 +39,7 @@
 #endif
 
 #include "aes.h"
+#include "casProxyClient.h"
 #include "sha256.h"
 
 namespace {
@@ -121,12 +123,28 @@ class PcscCard {
 public:
     ~PcscCard()
     {
-        if (hcard) {
-            SCardDisconnect(hcard, SCARD_LEAVE_CARD);
+        try {
+            if (hcard) {
+                scard_disconnect(hcard, SCARD_LEAVE_CARD);
+            }
+            if (hcontext) {
+                scard_release_context(hcontext);
+            }
+        } catch (const std::exception&) {
+            // Destruction must not terminate a recording process after a proxy disconnect.
         }
-        if (hcontext) {
-            SCardReleaseContext(hcontext);
+    }
+
+    void set_proxy(const std::string& address)
+    {
+        if (hcontext || hcard) {
+            throw std::runtime_error("Cannot change CAS proxy after opening a smart card");
         }
+        auto parsed = casproxy::parseAddress(address);
+        if (!parsed) {
+            throw std::runtime_error("Invalid CAS proxy address: " + address);
+        }
+        proxy = std::make_unique<CasProxyClient>(parsed->first, parsed->second);
     }
 
     int32_t reconnect()
@@ -135,8 +153,8 @@ public:
             connect();
             return SCARD_S_SUCCESS;
         }
-        return SCardReconnect(hcard, SCARD_SHARE_SHARED, SCARD_PROTOCOL_T1,
-                              SCARD_RESET_CARD, &active_protocol);
+        return scard_reconnect(hcard, SCARD_SHARE_SHARED, SCARD_PROTOCOL_T1,
+                               SCARD_RESET_CARD, &active_protocol);
     }
 
     std::vector<uint8_t> transmit(const std::vector<uint8_t>& message, int32_t *status)
@@ -145,18 +163,18 @@ public:
 
         DWORD recv_length = 256;
         std::vector<uint8_t> recv(recv_length);
-        int32_t result = SCardTransmit(hcard, SCARD_PCI_T1, message.data(),
-                                    static_cast<uint32_t>(message.size()),
-                                    nullptr, recv.data(), &recv_length);
+        int32_t result = scard_transmit(hcard, SCARD_PCI_T1, message.data(),
+                                       static_cast<uint32_t>(message.size()),
+                                       nullptr, recv.data(), &recv_length);
         for (int retry = 0; result != SCARD_S_SUCCESS && retry < 5; ++retry) {
             if (result == SCARD_W_RESET_CARD || result == SCARD_E_NOT_TRANSACTED) {
                 *status = SCARD_W_RESET_CARD;
                 return {};
             }
             recv_length = 256;
-            result = SCardTransmit(hcard, SCARD_PCI_T1, message.data(),
-                                   static_cast<uint32_t>(message.size()),
-                                   nullptr, recv.data(), &recv_length);
+            result = scard_transmit(hcard, SCARD_PCI_T1, message.data(),
+                                    static_cast<uint32_t>(message.size()),
+                                    nullptr, recv.data(), &recv_length);
         }
         *status = result;
         if (result != SCARD_S_SUCCESS || recv_length < 2) {
@@ -170,23 +188,86 @@ public:
     void begin()
     {
         connect();
-        SCardBeginTransaction(hcard);
+        scard_begin_transaction(hcard);
     }
 
     void end()
     {
         if (hcard) {
-            SCardEndTransaction(hcard, SCARD_LEAVE_CARD);
+            scard_end_transaction(hcard, SCARD_LEAVE_CARD);
         }
     }
 
 private:
+    LONG scard_establish_context(DWORD scope, LPSCARDCONTEXT context)
+    {
+        return proxy ? proxy->scardEstablishContext(scope, nullptr, nullptr, context)
+                     : SCardEstablishContext(scope, nullptr, nullptr, context);
+    }
+
+    LONG scard_release_context(SCARDCONTEXT context)
+    {
+        return proxy ? proxy->scardReleaseContext(context) : SCardReleaseContext(context);
+    }
+
+    LONG scard_list_readers(SCARDCONTEXT context, LPSTR readers, LPDWORD size)
+    {
+        return proxy ? proxy->scardListReaders(context, nullptr, readers, size)
+                     : SCardListReaders(context, nullptr, readers, size);
+    }
+
+    LONG scard_connect(SCARDCONTEXT context, LPCSTR reader, LPSCARDHANDLE card,
+                       LPDWORD protocol)
+    {
+        return proxy ? proxy->scardConnect(context, reader, SCARD_SHARE_SHARED,
+                                           SCARD_PROTOCOL_T1, card, protocol)
+                     : SCardConnect(context, reader, SCARD_SHARE_SHARED,
+                                    SCARD_PROTOCOL_T1, card, protocol);
+    }
+
+    LONG scard_reconnect(SCARDHANDLE card, DWORD share_mode, DWORD protocols,
+                         DWORD initialization, LPDWORD active_protocol)
+    {
+        return proxy ? proxy->scardReconnect(card, share_mode, protocols,
+                                             initialization, active_protocol)
+                     : SCardReconnect(card, share_mode, protocols,
+                                      initialization, active_protocol);
+    }
+
+    LONG scard_disconnect(SCARDHANDLE card, DWORD disposition)
+    {
+        return proxy ? proxy->scardDisconnect(card, disposition)
+                     : SCardDisconnect(card, disposition);
+    }
+
+    LONG scard_begin_transaction(SCARDHANDLE card)
+    {
+        return proxy ? proxy->scardBeginTransaction(card) : SCardBeginTransaction(card);
+    }
+
+    LONG scard_end_transaction(SCARDHANDLE card, DWORD disposition)
+    {
+        return proxy ? proxy->scardEndTransaction(card, disposition)
+                     : SCardEndTransaction(card, disposition);
+    }
+
+    LONG scard_transmit(SCARDHANDLE card, LPCSCARD_IO_REQUEST send_pci,
+                        LPCBYTE send_buffer, DWORD send_length,
+                        LPSCARD_IO_REQUEST recv_pci, LPBYTE recv_buffer,
+                        LPDWORD recv_length)
+    {
+        return proxy ? proxy->scardTransmit(card, send_pci, send_buffer, send_length,
+                                            recv_pci, recv_buffer, recv_length)
+                     : SCardTransmit(card, send_pci, send_buffer, send_length,
+                                     recv_pci, recv_buffer, recv_length);
+    }
+
     void init()
     {
         if (hcontext) {
             return;
         }
-        int32_t result = SCardEstablishContext(SCARD_SCOPE_USER, nullptr, nullptr, &hcontext);
+        int32_t result = scard_establish_context(SCARD_SCOPE_USER, &hcontext);
         if (result != SCARD_S_SUCCESS) {
             throw std::runtime_error("SCardEstablishContext failed");
         }
@@ -207,9 +288,9 @@ private:
         std::vector<uint8_t> apdu = apdu_case4(0x90, 0xA0, 0x00, 0x01, data, 0x00);
         DWORD recv_length = 256;
         std::vector<uint8_t> recv(recv_length);
-        LONG result = SCardTransmit(card, SCARD_PCI_T1, apdu.data(),
-                                    static_cast<DWORD>(apdu.size()),
-                                    nullptr, recv.data(), &recv_length);
+        LONG result = scard_transmit(card, SCARD_PCI_T1, apdu.data(),
+                                     static_cast<DWORD>(apdu.size()),
+                                     nullptr, recv.data(), &recv_length);
         if (result != SCARD_S_SUCCESS || recv_length < 0x0e + 0x20 + 2) {
             return false;
         }
@@ -240,13 +321,13 @@ private:
     {
         init();
         DWORD size = 0;
-        int32_t result = SCardListReaders(hcontext, nullptr, nullptr, &size);
+        int32_t result = scard_list_readers(hcontext, nullptr, &size);
         if (result != SCARD_S_SUCCESS || size == 0) {
             throw std::runtime_error("No smart card readers are available");
         }
 
         std::vector<char> readers(size);
-        result = SCardListReaders(hcontext, nullptr, readers.data(), &size);
+        result = scard_list_readers(hcontext, readers.data(), &size);
         if (result != SCARD_S_SUCCESS || readers.empty() || readers[0] == '\0') {
             throw std::runtime_error("Failed to list smart card readers");
         }
@@ -254,14 +335,13 @@ private:
         for (const char *reader = readers.data(); *reader; reader += std::strlen(reader) + 1) {
             SCARDHANDLE candidate = 0;
             DWORD active_protocol = 0;
-            result = SCardConnect(hcontext, reader, SCARD_SHARE_SHARED,
-                                  SCARD_PROTOCOL_T1, &candidate, &active_protocol);
+            result = scard_connect(hcontext, reader, &candidate, &active_protocol);
             if (result != SCARD_S_SUCCESS) {
                 continue;
             }
 
             bool matched = is_acas_card(candidate);
-            SCardDisconnect(candidate, SCARD_LEAVE_CARD);
+            scard_disconnect(candidate, SCARD_LEAVE_CARD);
             if (matched) {
                 return std::string(reader);
             }
@@ -277,13 +357,14 @@ private:
             return;
         }
         reader_name = find_acas_reader();
-        int32_t result = SCardConnect(hcontext, reader_name.c_str(), SCARD_SHARE_SHARED,
-                                   SCARD_PROTOCOL_T1, &hcard, &active_protocol);
+        int32_t result = scard_connect(hcontext, reader_name.c_str(), &hcard,
+                                      &active_protocol);
         if (result != SCARD_S_SUCCESS) {
             throw std::runtime_error("Failed to connect to smart card: " + reader_name);
         }
     }
 
+    std::unique_ptr<CasProxyClient> proxy;
     SCARDCONTEXT hcontext = 0;
     SCARDHANDLE hcard = 0;
     DWORD active_protocol = 0;
@@ -293,7 +374,14 @@ private:
 class Transaction {
 public:
     explicit Transaction(PcscCard& card) : card(card) { card.begin(); }
-    ~Transaction() { card.end(); }
+    ~Transaction()
+    {
+        try {
+            card.end();
+        } catch (const std::exception& e) {
+            std::cerr << e.what() << std::endl;
+        }
+    }
 
 private:
     PcscCard& card;
@@ -301,6 +389,11 @@ private:
 
 class Acas {
 public:
+    void set_proxy(const std::string& address)
+    {
+        card.set_proxy(address);
+    }
+
     bool on_ecm(const std::vector<uint8_t>& ecm)
     {
         if (ecm == last_ecm) {
@@ -650,6 +743,11 @@ void process_signaling_payload(uint16_t packet_id, const uint8_t *payload, size_
 
 class Passthrough {
 public:
+    void set_proxy(const std::string& address)
+    {
+        acas.set_proxy(address);
+    }
+
     void set_strip(bool strip)
     {
         strip_null_packets = strip;
@@ -818,6 +916,20 @@ extern "C" acas_passthrough_t *acas_passthrough_create(void)
 extern "C" void acas_passthrough_destroy(acas_passthrough_t *ctx)
 {
     delete ctx;
+}
+
+extern "C" int acas_passthrough_set_proxy(acas_passthrough_t *ctx, const char *address)
+{
+    if (!ctx || !address) {
+        return -1;
+    }
+    try {
+        ctx->impl.set_proxy(address);
+        return 0;
+    } catch (const std::exception& e) {
+        std::cerr << e.what() << std::endl;
+        return -1;
+    }
 }
 
 extern "C" void acas_passthrough_set_strip(acas_passthrough_t *ctx, int strip)
