@@ -332,6 +332,14 @@ private:
             throw std::runtime_error("Failed to list smart card readers");
         }
 
+        if (proxy) {
+            // Match dantto4k's proven remote-card path: the explicitly selected
+            // proxy owns the reader choice, and A0 validation is deferred until
+            // the normal transaction starts.  Probing here would transmit A0
+            // outside SCardBeginTransaction before opening the real session.
+            return std::string(readers.data());
+        }
+
         for (const char *reader = readers.data(); *reader; reader += std::strlen(reader) + 1) {
             SCARDHANDLE candidate = 0;
             DWORD active_protocol = 0;
