@@ -286,16 +286,59 @@ set_frequency(thread_data *tdata, boolean msg_view)
 }
 
 int
-open_tuner(thread_data *tdata, int dev_num, boolean msg_view)
+build_device_path(char *device, size_t size, int dev_num,
+                  const char *dev_path, const char *node)
 {
-    char device[32];
+    int written;
+
+    if(dev_path != NULL) {
+        size_t path_len = strlen(dev_path);
+        const char *basename;
+        const char *suffix;
+
+        while(path_len > 1 && dev_path[path_len - 1] == '/')
+            path_len--;
+
+        basename = memrchr(dev_path, '/', path_len);
+        basename = basename != NULL ? basename + 1 : dev_path;
+        suffix = basename + strlen("frontend");
+
+        if(strncmp(basename, "frontend", strlen("frontend")) == 0 &&
+           *suffix != '\0' && strspn(suffix, "0123456789") == strlen(suffix)) {
+            size_t dir_len = (size_t)(basename - dev_path);
+            written = snprintf(device, size, "%.*s%s%s",
+                               (int)dir_len, dev_path, node, suffix);
+        } else {
+            written = snprintf(device, size, "%.*s/%s0",
+                               (int)path_len, dev_path, node);
+        }
+    } else {
+        written = snprintf(device, size, "/dev/dvb/adapter%d/%s0",
+                           dev_num, node);
+    }
+
+    if(written < 0 || (size_t)written >= size) {
+        fprintf(stderr, "DVB device path is too long\n");
+        return 1;
+    }
+
+    return 0;
+}
+
+int
+open_tuner(thread_data *tdata, int dev_num, const char *dev_path,
+           boolean msg_view)
+{
+    char device[PATH_MAX];
 
     if(tdata->fefd == 0){
-        sprintf(device, "/dev/dvb/adapter%d/frontend0", dev_num);
+        if(build_device_path(device, sizeof(device), dev_num, dev_path,
+                             "frontend") != 0)
+            return 1;
         tdata->fefd = open(device, O_RDWR);
         if(tdata->fefd < 0) {
             if(msg_view)
-                fprintf(stderr, "cannot open frontend device\n");
+                fprintf(stderr, "cannot open frontend device \"%s\"\n", device);
             tdata->fefd = 0;
             return 1;
         }
@@ -479,15 +522,17 @@ stream_stop(thread_data *tdata)
 }
 
 int
-lnb_control(int dev_num, int lnb_vol)
+lnb_control(int dev_num, const char *dev_path, int lnb_vol)
 {
     struct dtv_property prop[1];
     struct dtv_properties props;
     struct dvb_frontend_info fe_info;
-    char device[32];
+    char device[PATH_MAX];
     int fefd;
 
-    sprintf(device, "/dev/dvb/adapter%d/frontend0", dev_num);
+    if(build_device_path(device, sizeof(device), dev_num, dev_path,
+                         "frontend") != 0)
+        return 1;
     fefd = open(device, O_RDWR);
     if(fefd < 0) {
         fprintf(stderr, "cannot open \"%s\"\n", device);
@@ -688,10 +733,10 @@ close_dir(struct dirent **namelist, int namecnts)
 
 /* from checksignal.c */
 int
-tune(char *channel, thread_data *tdata, int dev_num)
+tune(char *channel, thread_data *tdata, int dev_num, const char *dev_path)
 {
     struct dmx_pes_filter_params filter;
-    char device[32];
+    char device[PATH_MAX];
 
     /* get channel */
     tdata->table = searchrecoff(channel);
@@ -702,8 +747,8 @@ tune(char *channel, thread_data *tdata, int dev_num)
 
     /* open tuner */
     /* case 1: specified tuner device */
-    if(dev_num >= 0) {
-		if(open_tuner(tdata, dev_num, TRUE) != 0)
+    if(dev_num >= 0 || dev_path != NULL) {
+		if(open_tuner(tdata, dev_num, dev_path, TRUE) != 0)
 			return 1;
 		while(dvb_lock_check(tdata) != 0){
             if(tdata->tune_persistent) {
@@ -711,11 +756,13 @@ tune(char *channel, thread_data *tdata, int dev_num)
                     close_tuner(tdata);
                     return 1;
                 }
-                fprintf(stderr, "No signal. Still trying: /dev/dvb/adapter%d\n", dev_num);
+                fprintf(stderr, "No signal. Still trying: %s\n",
+                        dev_path != NULL ? dev_path : device);
             }
             else {
                 close_tuner(tdata);
-                fprintf(stderr, "Cannot tune to the specified channel: /dev/dvb/adapter%d\n", dev_num);
+                fprintf(stderr, "Cannot tune to the specified channel: %s\n",
+                        dev_path != NULL ? dev_path : device);
                 return 1;
             }
 		}
@@ -753,7 +800,7 @@ tune(char *channel, thread_data *tdata, int dev_num)
 
             dev_num = tuner[lp];
 #endif
-			if(open_tuner(tdata, dev_num, FALSE) == 0){
+			if(open_tuner(tdata, dev_num, NULL, FALSE) == 0){
                 /* tune to specified channel */
                 if(tdata->tune_persistent) {
 					while(dvb_lock_check(tdata) != 0 &&
@@ -802,7 +849,9 @@ tune(char *channel, thread_data *tdata, int dev_num)
 	}
 
     if(tdata->dmxfd == 0){
-        sprintf(device, "/dev/dvb/adapter%d/demux0", dev_num);
+        if(build_device_path(device, sizeof(device), dev_num, dev_path,
+                             "demux") != 0)
+            return 1;
         if((tdata->dmxfd = open(device,O_RDWR)) < 0){
             tdata->dmxfd = 0;
             fprintf(stderr, "cannot open demux device\n");
@@ -838,7 +887,9 @@ tune(char *channel, thread_data *tdata, int dev_num)
     }
 
     if(tdata->tfd < 0){
-        sprintf(device, "/dev/dvb/adapter%d/dvr0", dev_num);
+        if(build_device_path(device, sizeof(device), dev_num, dev_path,
+                             "dvr") != 0)
+            return 1;
         if((tdata->tfd = open(device,O_RDONLY)) < 0){
 //      if((tdata->tfd = open(device,O_RDONLY|O_NONBLOCK)) < 0){
             fprintf(stderr, "cannot open dvr device\n");

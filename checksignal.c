@@ -32,7 +32,7 @@
 #include "tssplitter_lite.h"
 
 /* prototypes */
-int tune(char *channel, thread_data *tdata, int dev_num);
+int tune(char *channel, thread_data *tdata, int dev_num, const char *dev_path);
 int close_tuner(thread_data *tdata);
 
 void
@@ -92,7 +92,7 @@ init_signal_handlers(pthread_t *signal_thread, thread_data *tdata)
 void
 show_usage(char *cmd)
 {
-    fprintf(stderr, "Usage: \n%s [--dev devicenumber] [--lnb voltage] [--bell] channel\n", cmd);
+    fprintf(stderr, "Usage: \n%s [--dev device] [--lnb voltage] [--bell] channel\n", cmd);
     fprintf(stderr, "\n");
 }
 
@@ -100,7 +100,7 @@ void
 show_options(void)
 {
     fprintf(stderr, "Options:\n");
-    fprintf(stderr, "--dev N:             Use DVB device /dev/dvb/adapterN\n");
+    fprintf(stderr, "--dev device:        Use adapter number, adapter path, or frontend path\n");
     fprintf(stderr, "--lnb voltage:       Specify LNB voltage (0, 11, 15)\n");
     fprintf(stderr, "--bell:              Notify signal quality by bell\n");
     fprintf(stderr, "--help:              Show this help\n");
@@ -131,6 +131,7 @@ main(int argc, char **argv)
     tdata.fefd = 0;
     tdata.dmxfd = 0;
     int dev_num = -1;
+    char *dev_path = NULL;
     int val;
     char *voltage[] = {"11V", "15V", "0V"};
     boolean use_bell = FALSE;
@@ -177,7 +178,10 @@ main(int argc, char **argv)
             fprintf(stderr, "LNB = %s\n", voltage[tdata.lnb]);
             break;
         case 'd':
-            dev_num = atoi(optarg);
+            if(optarg[0] == '/')
+                dev_path = optarg;
+            else
+                dev_num = atoi(optarg);
             break;
         }
     }
@@ -195,7 +199,7 @@ main(int argc, char **argv)
     init_signal_handlers(&signal_thread, &tdata);
 
     /* tune */
-    if(tune(argv[optind], &tdata, dev_num) != 0)
+    if(tune(argv[optind], &tdata, dev_num, dev_path) != 0)
         return 1;
 
     while(1) {

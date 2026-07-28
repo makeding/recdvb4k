@@ -92,10 +92,10 @@ extern ISDB_T_FREQ_CONV_TABLE isdb_t_conv_set;
 extern boolean f_exit;
 
 /* prototypes */
-int tune(char *channel, thread_data *tdata, int dev_num);
+int tune(char *channel, thread_data *tdata, int dev_num, const char *dev_path);
 int set_frequency(thread_data *tdata, boolean);
 int close_tuner(thread_data *tdata);
-int lnb_control(int dev_num, int lnb_vol);
+int lnb_control(int dev_num, const char *dev_path, int lnb_vol);
 void show_channels(void);
 ISDB_T_FREQ_CONV_TABLE *searchrecoff(char *channel);
 void calc_cn(int fd, int type, boolean use_bell);

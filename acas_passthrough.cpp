@@ -865,7 +865,9 @@ private:
             process_signaling_payload(info.packet_id, payload, info.payload_size, fragments, acas);
         }
 
-        if (info.scramble_flag == kScrambleEven || info.scramble_flag == kScrambleOdd) {
+        const bool encrypted = info.scramble_flag == kScrambleEven ||
+                               info.scramble_flag == kScrambleOdd;
+        if (encrypted) {
             if (!acas.decrypt_payload(info.scramble_flag, info.packet_id, info.sequence,
                                       payload, info.payload_size, info.decrypt_size,
                                       info.has_initial_counter ? &info.initial_counter : nullptr)) {
@@ -874,27 +876,36 @@ private:
             if (info.scramble_control) {
                 *info.scramble_control &= static_cast<uint8_t>(~0x18);
             }
-            if (info.has_message_authentication && info.extension_length_field &&
-                info.b61_multi_length_field && info.payload_length_field) {
-                const size_t payload_abs = static_cast<size_t>(payload - packet.data());
-                const size_t payload_length_abs = static_cast<size_t>(info.payload_length_field - packet.data());
-                const size_t auth_size = info.payload_size - info.decrypt_size;
-                const uint16_t extension_length = be16(info.extension_length_field);
-                const uint16_t b61_multi_length = be16(info.b61_multi_length_field);
-                if (extension_length >= 2 && b61_multi_length >= 3 &&
-                    payload_abs + info.payload_size <= packet.size()) {
-                    put_be16(info.extension_length_field, extension_length - 2);
-                    put_be16(info.b61_multi_length_field, b61_multi_length - 2);
-                    *info.scramble_control &= static_cast<uint8_t>(~0x02);
+        }
 
-                    if (auth_size > 0) {
-                        packet.erase(packet.begin() + payload_abs + info.decrypt_size,
-                                     packet.begin() + payload_abs + info.payload_size);
-                    }
-                    packet.erase(packet.begin() + payload_length_abs,
-                                 packet.begin() + payload_length_abs + 2);
-                    put_be16(packet.data() + 2, static_cast<uint16_t>(packet.size() - 4));
+        /*
+         * The encryption and message-authentication flags are independent.
+         * A broadcaster can switch a service to clear payloads while retaining
+         * the authentication field.  Strip that field for both encrypted and
+         * clear packets so downstream remuxers never consume the authentication
+         * bytes as media payload.
+         */
+        if (info.has_message_authentication && info.scramble_control &&
+            info.extension_length_field && info.b61_multi_length_field &&
+            info.payload_length_field) {
+            const size_t payload_abs = static_cast<size_t>(payload - packet.data());
+            const size_t payload_length_abs = static_cast<size_t>(info.payload_length_field - packet.data());
+            const size_t auth_size = info.payload_size - info.decrypt_size;
+            const uint16_t extension_length = be16(info.extension_length_field);
+            const uint16_t b61_multi_length = be16(info.b61_multi_length_field);
+            if (extension_length >= 2 && b61_multi_length >= 3 &&
+                payload_abs + info.payload_size <= packet.size()) {
+                put_be16(info.extension_length_field, extension_length - 2);
+                put_be16(info.b61_multi_length_field, b61_multi_length - 2);
+                *info.scramble_control &= static_cast<uint8_t>(~0x02);
+
+                if (auth_size > 0) {
+                    packet.erase(packet.begin() + payload_abs + info.decrypt_size,
+                                 packet.begin() + payload_abs + info.payload_size);
                 }
+                packet.erase(packet.begin() + payload_length_abs,
+                             packet.begin() + payload_length_abs + 2);
+                put_be16(packet.data() + 2, static_cast<uint16_t>(packet.size() - 4));
             }
         }
     }
@@ -1002,6 +1013,32 @@ void require_equal(const std::vector<uint8_t>& actual, const std::vector<uint8_t
     }
 }
 
+std::vector<uint8_t> make_clear_authenticated_packet()
+{
+    std::vector<uint8_t> mmtp(12, 0);
+    mmtp[0] = 0x02; // Extension header present.
+    mmtp[2] = 0x01;
+    mmtp[3] = 0x00;
+
+    const std::vector<uint8_t> extension = {
+        0x00, 0x00, 0x00, 0x07, // Type 0, extension length 7.
+        0x80, 0x01, 0x00, 0x03, // Last multi-extension, B61, length 3.
+        0x02,                   // Clear payload, authentication present.
+        0x00, 0x04,             // Four bytes of media payload.
+    };
+    mmtp.insert(mmtp.end(), extension.begin(), extension.end());
+    mmtp.insert(mmtp.end(), { 0x11, 0x22, 0x33, 0x44 });
+    mmtp.insert(mmtp.end(), { 0xa1, 0xa2, 0xa3 }); // Authentication bytes.
+
+    std::vector<uint8_t> packet = {
+        kTlvSync, kTlvPacketTypeCompressedIp, 0x00, 0x00,
+        0x00, 0x00, 0x00, // Compressed-IP context and header type.
+    };
+    packet.insert(packet.end(), mmtp.begin(), mmtp.end());
+    put_be16(packet.data() + 2, static_cast<uint16_t>(packet.size() - 4));
+    return packet;
+}
+
 } // namespace
 
 int main()
@@ -1017,6 +1054,17 @@ int main()
     stripped.insert(stripped.end(), ipv4.begin(), ipv4.end());
     require_equal(run_passthrough(true, { { combined.begin(), combined.begin() + 5 },
                                           { combined.begin() + 5, combined.end() } }), stripped);
+
+    const std::vector<uint8_t> clear_authenticated = make_clear_authenticated_packet();
+    std::vector<uint8_t> clear_expected = clear_authenticated;
+    // Remove the authentication bytes and their two-byte payload-length field.
+    clear_expected.erase(clear_expected.end() - 3, clear_expected.end());
+    clear_expected.erase(clear_expected.begin() + 28, clear_expected.begin() + 30);
+    put_be16(clear_expected.data() + 21, 5); // MMTP extension length.
+    put_be16(clear_expected.data() + 25, 1); // B61 multi-extension length.
+    clear_expected[27] &= static_cast<uint8_t>(~0x02); // Authentication flag.
+    put_be16(clear_expected.data() + 2, static_cast<uint16_t>(clear_expected.size() - 4));
+    require_equal(run_passthrough(false, { clear_authenticated }), clear_expected);
     return 0;
 }
 #endif

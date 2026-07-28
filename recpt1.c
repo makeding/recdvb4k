@@ -111,7 +111,7 @@ mq_recv(void *t)
 	                    return NULL;
 
 //		            tdata->table = table;
-	                tune(channel, tdata, -1);
+	                tune(channel, tdata, -1, NULL);
 	            } else {
 		            tdata->table = table;
 	                /* SET_CHANNEL only */
@@ -124,7 +124,7 @@ mq_recv(void *t)
 	            }
 #else
 		        tdata->table = table;
-	            tune(channel, tdata, -1);
+	            tune(channel, tdata, -1, NULL);
 #endif
 			}else
 			if(tbl_stat && table == &isdb_t_conv_set)
@@ -573,13 +573,13 @@ show_usage(char *cmd)
 {
     fprintf(stderr, "%s Ver %s\n", cmd, version);
 #if defined(HAVE_LIBARIB25) && defined(HAVE_B61)
-    fprintf(stderr, "Usage: \n%s [[--b25 [--round N] [--EMM]] | [--b61 [--cas-proxy host:port]]] [--strip] [--udp [--addr hostname --port portnumber]] [--http portnumber] [--dev devicenumber] [--lnb voltage] [--sid SID1,SID2] channel rectime destfile\n", cmd);
+    fprintf(stderr, "Usage: \n%s [[--b25 [--round N] [--EMM]] | [--b61 [--cas-proxy host:port]]] [--strip] [--udp [--addr hostname --port portnumber]] [--http portnumber] [--dev device] [--lnb voltage] [--sid SID1,SID2] channel rectime destfile\n", cmd);
 #elif defined(HAVE_LIBARIB25)
-    fprintf(stderr, "Usage: \n%s [--b25 [--round N] [--strip] [--EMM]] [--udp [--addr hostname --port portnumber]] [--http portnumber] [--dev devicenumber] [--lnb voltage] [--sid SID1,SID2] channel rectime destfile\n", cmd);
+    fprintf(stderr, "Usage: \n%s [--b25 [--round N] [--strip] [--EMM]] [--udp [--addr hostname --port portnumber]] [--http portnumber] [--dev device] [--lnb voltage] [--sid SID1,SID2] channel rectime destfile\n", cmd);
 #elif defined(HAVE_B61)
-    fprintf(stderr, "Usage: \n%s [[--b61 [--cas-proxy host:port]] [--strip]] [--udp [--addr hostname --port portnumber]] [--http portnumber] [--dev devicenumber] [--lnb voltage] [--sid SID1,SID2] channel rectime destfile\n", cmd);
+    fprintf(stderr, "Usage: \n%s [[--b61 [--cas-proxy host:port]] [--strip]] [--udp [--addr hostname --port portnumber]] [--http portnumber] [--dev device] [--lnb voltage] [--sid SID1,SID2] channel rectime destfile\n", cmd);
 #else
-    fprintf(stderr, "Usage: \n%s [--udp [--addr hostname --port portnumber]] [--http portnumber] [--dev devicenumber] [--lnb voltage] [--sid SID1,SID2] channel rectime destfile\n", cmd);
+    fprintf(stderr, "Usage: \n%s [--udp [--addr hostname --port portnumber]] [--http portnumber] [--dev device] [--lnb voltage] [--sid SID1,SID2] channel rectime destfile\n", cmd);
 #endif
 #ifdef HAVE_B61
     fprintf(stderr, "4K B61 passthrough: %s --b61 [--cas-proxy host:port] channel rectime destfile\n", cmd);
@@ -589,7 +589,7 @@ show_usage(char *cmd)
     fprintf(stderr, "if rectime  is '-', records indefinitely.\n");
     fprintf(stderr, "if destfile is '-', stdout is used for output.\n");
     fprintf(stderr, "\n");
-    fprintf(stderr, "LNB control: %s --dev devicenumber --lnb voltage\n", cmd);
+    fprintf(stderr, "LNB control: %s --dev device --lnb voltage\n", cmd);
 }
 
 void
@@ -612,7 +612,7 @@ show_options(void)
     fprintf(stderr, "  --addr hostname:   Hostname or address to connect\n");
     fprintf(stderr, "  --port portnumber: Port number to connect\n");
     fprintf(stderr, "--http portnumber:   Turn on http broadcasting (run as a daemon)\n");
-    fprintf(stderr, "--dev N:             Use DVB device /dev/dvb/adapterN\n");
+    fprintf(stderr, "--dev device:        Use adapter number, adapter path, or frontend path\n");
     fprintf(stderr, "--lnb voltage:       Specify LNB voltage (0, 11, 15)\n");
     fprintf(stderr, "--sid SID1,SID2,...: Specify SID number in CSV format (101,102,...)\n");
     fprintf(stderr, "--help:              Show this help\n");
@@ -766,6 +766,7 @@ main(int argc, char **argv)
     int port_http = 12345;
     sock_data *sockdata = NULL;
     int dev_num = -1;
+    char *dev_path = NULL;
     int val;
     char *voltage[] = {"11V", "15V", "0V"};
     char *sid_list = NULL;
@@ -846,8 +847,13 @@ main(int argc, char **argv)
             fprintf(stderr, "UDP port: %d\n", port_to);
             break;
         case 'd':
-            dev_num = atoi(optarg);
-            fprintf(stderr, "using device: /dev/dvb/adapter%d\n", dev_num);
+            if(optarg[0] == '/') {
+                dev_path = optarg;
+                fprintf(stderr, "using device: %s\n", dev_path);
+            } else {
+                dev_num = atoi(optarg);
+                fprintf(stderr, "using device: /dev/dvb/adapter%d\n", dev_num);
+            }
             break;
         case 'i':
             use_splitter = TRUE;
@@ -920,8 +926,8 @@ if(use_http){	// http-server add-
             tdata.wfd = -1;
         }
         else {
-            if(argc == optind && dev_num != -1 && tdata.lnb != -1){
-				return lnb_control(dev_num, tdata.lnb);
+            if(argc == optind && (dev_num != -1 || dev_path != NULL) && tdata.lnb != -1){
+				return lnb_control(dev_num, dev_path, tdata.lnb);
 			}else{
 	            show_usage(argv[0]);
 	            fprintf(stderr, "\n");
@@ -935,7 +941,7 @@ if(use_http){	// http-server add-
     fprintf(stderr, "pid = %d\n", getpid());
 
     /* tune */
-    if(tune(argv[optind], &tdata, dev_num) != 0)
+    if(tune(argv[optind], &tdata, dev_num, dev_path) != 0)
         return 1;
 
     /* set recsec */
@@ -1075,7 +1081,7 @@ while(1){	// http-server add-
 		tdata.wfd = connected_socket;
 
 		//tune
-		if(tune(channel, &tdata, -1) != 0){
+		if(tune(channel, &tdata, -1, NULL) != 0){
 			fprintf(stderr, "Tuner cannot start recording\n");
 			continue;
 		}
