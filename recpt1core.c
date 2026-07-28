@@ -294,17 +294,24 @@ build_device_path(char *device, size_t size, int dev_num,
     if(dev_path != NULL) {
         size_t path_len = strlen(dev_path);
         const char *basename;
+        const char *path_end;
         const char *suffix;
+        size_t basename_len;
+        const size_t frontend_len = strlen("frontend");
 
         while(path_len > 1 && dev_path[path_len - 1] == '/')
             path_len--;
 
-        basename = memrchr(dev_path, '/', path_len);
-        basename = basename != NULL ? basename + 1 : dev_path;
-        suffix = basename + strlen("frontend");
+        path_end = dev_path + path_len;
+        basename = path_end;
+        while(basename > dev_path && basename[-1] != '/')
+            basename--;
+        basename_len = (size_t)(path_end - basename);
+        suffix = basename + frontend_len;
 
-        if(strncmp(basename, "frontend", strlen("frontend")) == 0 &&
-           *suffix != '\0' && strspn(suffix, "0123456789") == strlen(suffix)) {
+        if(basename_len > frontend_len &&
+           strncmp(basename, "frontend", frontend_len) == 0 &&
+           strspn(suffix, "0123456789") == basename_len - frontend_len) {
             size_t dir_len = (size_t)(basename - dev_path);
             written = snprintf(device, size, "%.*s%s%s",
                                (int)dir_len, dev_path, node, suffix);
