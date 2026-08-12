@@ -50,7 +50,7 @@ ISDB_T_FREQ_CONV_TABLE    isdb_t_conv_table[] = {
     { BS_15, CHTYPE_SATELLITE, 0, 0x40f1, "101"},  /* NHK BS */
     { BS_15, CHTYPE_SATELLITE, 0, 0x40f1, "102"},  /* NHK BS */
     { BS_15, CHTYPE_SATELLITE, 1, 0x40f2, "201"},  /* BS10プレミアム */
-    { BS_15, CHTYPE_SATELLITE, 3, 0x48f3, "200"},  /* BS10 */
+    { BS_15, CHTYPE_SATELLITE, 2, 0x48f3, "200"},  /* BS10 */
     { BS_19, CHTYPE_SATELLITE, 0, 0x4730, "245"},  /* J SPORTS 4 */
     { BS_19, CHTYPE_SATELLITE, 1, 0x4731, "242"},  /* J SPORTS 1 */
     { BS_19, CHTYPE_SATELLITE, 2, 0x4732, "243"},  /* J SPORTS 2 */
@@ -60,7 +60,7 @@ ISDB_T_FREQ_CONV_TABLE    isdb_t_conv_table[] = {
     { BS_21, CHTYPE_SATELLITE, 2, 0x4752, "234"},  /* グリーンチャンネル */
     { BS_23, CHTYPE_SATELLITE, 0, 0x4770, "256"},  /* ディズニーch */
     { BS_23, CHTYPE_SATELLITE, 1, 0x4971, "265"},  /* BSよしもと */
-    { BS_23, CHTYPE_SATELLITE, 3, 0x4973, "260"},  /* J：COM BS */
+    { BS_23, CHTYPE_SATELLITE, 2, 0x4973, "260"},  /* J：COM BS */
 
     { BS_07, CHTYPE_SATELLITE, 0, 0xB070, "BS07_0"},  /* BS朝日 4K */
     { BS_07, CHTYPE_SATELLITE, 1, 0xB071, "BS07_1"},  /* BSテレ東 4K */
