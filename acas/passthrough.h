@@ -3,7 +3,7 @@
  *
  * Original project: https://github.com/nekohkr/dantto4k.git
  * Local source revision: 141fd49cf674c9c9e3f3c770a20b3291ff292969
- * See acas_passthrough.cpp for the original dantto4k source file list.
+ * See passthrough.cpp for the original dantto4k source file list.
  */
 #ifndef _ACAS_PASSTHROUGH_H_
 #define _ACAS_PASSTHROUGH_H_

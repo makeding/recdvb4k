@@ -20,6 +20,8 @@
 * B61 のマルチタイプヘッダー拡張を解析し、MMT スクランブル制御
   even/odd、メッセージ認証付き payload length、MMT スクランブル初期値
   情報を扱う。
+* ACAS に必要な AES/SHA-256、PC/SC、CAS proxy クライアントをソースツリー内に
+  持ち、ビルド時に dantto4k の checkout を参照しない。
 
 ### B61/ACAS passthrough について
 
@@ -30,6 +32,8 @@
 
 * MMT/TLV 内の M2 セクションメッセージから ECM を取得し、ACAS カードへ
   APDU として転送する。
+* カードから取得した CAS module ID で EMM を選別して転送し、work key と
+  F1Ks pointer の更新後は同じ ECM も再処理する。
 * ACAS 応答から odd/even のスクランブル鍵を取得する。
 * MMTP packet id と packet sequence number、または B61 拡張領域の
   MMT スクランブル初期値情報から AES-CTR の初期カウンタを作る。
@@ -48,7 +52,8 @@
   は未実装。
 * メッセージ認証コードは passthrough のために剥離するが、標準にある
   改ざん検出としての MAC 検証は未実装。
-* EMM や複数 CA_system_id の完全な受信機処理は実装していない。
+* EMM individual/common message と複数 CA_system_id の完全な受信機処理は
+  実装していない。work key 更新用の EMM (table_id 0x84) のみを扱う。
 * TLV passthrough のためにヘッダーを書き換えるため、出力は「元の放送 TLV
   そのもの」ではなく「復号済みとして downstream へ渡すための TLV」です。
 
@@ -126,13 +131,14 @@
   % make maintainer-clean
 ```
 
-4K B61/MMT-TLV の ACAS デスクランブルを有効にする場合は、dantto4k の `src`
-ディレクトリを指定してビルドします。standalone Asio も必要です。実行時は
-`--b61` を指定すると、挿入済みの ACAS カードを自動検出します。
+4K B61/MMT-TLV の ACAS デスクランブルを有効にする場合は standalone Asio と
+PC/SC が必要です。実行時は `--b61` を指定すると、挿入済みの ACAS カードを
+自動検出します。
 内網上の casproxyserver を使う場合は `--cas-proxy host:port` を追加します。
 
 ```
-  % ./configure --enable-b25 --enable-b61 --with-dantto4k-src=/path/to/dantto4k/src
+  % ./configure --enable-b25 --enable-b61
+  % make check
   % recdvb4k --b61 BS4K_... 10 out.tlv
   % recdvb4k --b61 --cas-proxy 192.168.6.253:24000 BS4K_... 10 out.tlv
 ```

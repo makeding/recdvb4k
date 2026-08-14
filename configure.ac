@@ -26,11 +26,6 @@ AC_ARG_ENABLE(b61,
   [],
   [enable_b61=no]
 )
-AC_ARG_WITH(dantto4k-src,
-  [AS_HELP_STRING([--with-dantto4k-src=DIR],[path to dantto4k src directory])],
-  [DANTTO4K_SRC="$withval"],
-  [DANTTO4K_SRC="../dantto4k/src"]
-)
 AC_ARG_WITH(asio-include,
   [AS_HELP_STRING([--with-asio-include=DIR],[path containing asio.hpp])],
   [ASIO_CPPFLAGS="-I$withval"],
@@ -40,13 +35,8 @@ AC_ARG_WITH(asio-include,
 B61_OBJS=
 B61_CPPFLAGS=
 B61_LIBS=
+B61_TEST_TARGET=
 AS_IF([test "x$enable_b61" = "xyes"], [
-  AS_IF([test ! -f "$DANTTO4K_SRC/aes.cpp"], [
-    AC_MSG_ERROR([dantto4k aes.cpp is required for B61 support. Use --with-dantto4k-src=DIR])
-  ])
-  AS_IF([test ! -f "$DANTTO4K_SRC/casProxyClient.cpp" || test ! -f "$DANTTO4K_SRC/casProxy.h"], [
-    AC_MSG_ERROR([dantto4k casProxy client sources are required for B61 proxy support. Use --with-dantto4k-src=DIR])
-  ])
   PKG_CHECK_MODULES([PCSC], [libpcsclite], [], [
     PCSC_CFLAGS=
     PCSC_LIBS=
@@ -73,9 +63,9 @@ AS_IF([test "x$enable_b61" = "xyes"], [
   LIBS="$LIBS $PCSC_LIBS"
   AC_SEARCH_LIBS([SCardEstablishContext], [pcsclite], [
     AC_DEFINE([HAVE_B61], [1], [Define if B61/ACAS passthrough support is enabled])
-    B61_OBJS="acas_passthrough.o dantto_aes.o dantto_cas_proxy_client.o"
-    dnl dantto objects are built directly from dantto4k/src.
-    B61_CPPFLAGS="-DHAVE_B61 -DASIO_STANDALONE -I$DANTTO4K_SRC $PCSC_CFLAGS $PCSC_PARENT_CFLAGS $ASIO_CPPFLAGS"
+    B61_OBJS="acas_passthrough.o acas_state.o acas_card.o acas_sections.o acas_response.o acas_aes.o acas_cas_proxy_client.o"
+    B61_TEST_TARGET="acas_test"
+    B61_CPPFLAGS="-DHAVE_B61 -DASIO_STANDALONE -I. $PCSC_CFLAGS $PCSC_PARENT_CFLAGS $ASIO_CPPFLAGS"
     B61_LIBS="$PCSC_LIBS"
     AS_IF([test "x$ac_cv_search_SCardEstablishContext" != "xnone required"], [
       B61_LIBS="$B61_LIBS $ac_cv_search_SCardEstablishContext"
@@ -90,7 +80,7 @@ AS_IF([test "x$enable_b61" = "xyes"], [
 AC_SUBST([B61_OBJS])
 AC_SUBST([B61_CPPFLAGS])
 AC_SUBST([B61_LIBS])
-AC_SUBST([DANTTO4K_SRC])
+AC_SUBST([B61_TEST_TARGET])
 
 # Checks for libraries.
 AC_CHECK_LIB([m], [log10])

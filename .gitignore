@@ -3,6 +3,7 @@
 Makefile
 .deps
 autom4te.cache/
+aclocal.m4
 config.h
 config.h.in
 config.log
@@ -12,5 +13,5 @@ recdvb
 chkdvbsignal
 recpt1ctl
 tssplitter_lite
+/acas_test
 version.h
-

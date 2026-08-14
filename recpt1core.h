@@ -33,7 +33,7 @@
 #include "config.h"
 #include "decoder.h"
 #ifdef HAVE_B61
-#include "acas_passthrough.h"
+#include "acas/passthrough.h"
 #endif
 #include "recpt1.h"
 #include "mkpath.h"
