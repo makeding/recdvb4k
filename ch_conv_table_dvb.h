@@ -25,6 +25,19 @@
 #define  CS_20  21
 #define  CS_22  22
 #define  CS_24  23
+#define  CS_01  49
+#define  CS_03  50
+#define  CS_05  51
+#define  CS_07  52
+#define  CS_09  53
+#define  CS_11  54
+#define  CS_13  55
+#define  CS_15  56
+#define  CS_17  57
+#define  CS_19  58
+#define  CS_21  59
+#define  CS_23  60
+#define  CS_25  48
 #define  BS8K_14 42
 
 ISDB_T_FREQ_CONV_TABLE    isdb_t_conv_table[] = {
@@ -85,6 +98,21 @@ ISDB_T_FREQ_CONV_TABLE    isdb_t_conv_table[] = {
     { CS_20, CHTYPE_SATELLITE, 0, 0x7140, "CS20"},  /* ND20 */
     { CS_22, CHTYPE_SATELLITE, 0, 0x7160, "CS22"},  /* ND22 */
     { CS_24, CHTYPE_SATELLITE, 0, 0x7180, "CS24"},  /* ND24 */
+
+    /* CS left-hand physical channels; no service-specific TSID filter. */
+    { CS_01, CHTYPE_SATELLITE, 0, 0, "CS1" },  /* ND1, 2766 MHz */
+    { CS_03, CHTYPE_SATELLITE, 0, 0, "CS3" },  /* ND3, 2806 MHz */
+    { CS_05, CHTYPE_SATELLITE, 0, 0, "CS5" },  /* ND5, 2846 MHz */
+    { CS_07, CHTYPE_SATELLITE, 0, 0, "CS7" },  /* ND7, 2886 MHz */
+    { CS_09, CHTYPE_SATELLITE, 0, 0, "CS9" },  /* ND9, 2926 MHz */
+    { CS_11, CHTYPE_SATELLITE, 0, 0, "CS11"},  /* ND11, 2966 MHz */
+    { CS_13, CHTYPE_SATELLITE, 0, 0, "CS13"},  /* ND13, 3006 MHz */
+    { CS_15, CHTYPE_SATELLITE, 0, 0, "CS15"},  /* ND15, 3046 MHz */
+    { CS_17, CHTYPE_SATELLITE, 0, 0, "CS17"},  /* ND17, 3086 MHz */
+    { CS_19, CHTYPE_SATELLITE, 0, 0, "CS19"},  /* ND19, 3126 MHz */
+    { CS_21, CHTYPE_SATELLITE, 0, 0, "CS21"},  /* ND21, 3166 MHz */
+    { CS_23, CHTYPE_SATELLITE, 0, 0, "CS23"},  /* ND23, 3206 MHz */
+    { CS_25, CHTYPE_SATELLITE, 0, 0, "CS25"},  /* ND25, 2726 MHz */
 
     { CS_02, CHTYPE_SATELLITE, 0, 0x6020, "296" },  /* TBSチャンネル1 */
     { CS_02, CHTYPE_SATELLITE, 0, 0x6020, "298" },  /* テレ朝チャンネル1 */
@@ -247,6 +275,11 @@ char *helpChList[] = {
 	"BS17_1 : BS-TBS 4K",
 	"BS17_2 : BSフジ 4K",
 	"BS14_0 : NHK BS 8K",
+	"",
+	"CS1 / CS3 / CS5 / CS7 : CS左旋 2766 / 2806 / 2846 / 2886 MHz",
+	"CS9 / CS11 / CS13 / CS15 : CS左旋 2926 / 2966 / 3006 / 3046 MHz",
+	"CS17 / CS19 / CS21 / CS23 : CS左旋 3086 / 3126 / 3166 / 3206 MHz",
+	"CS25 : CS左旋 2726 MHz",
 	"",
 	" 55 ch : ショップチャンネル",
 	"161 ch : QVC",
