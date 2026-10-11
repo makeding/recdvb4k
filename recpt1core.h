@@ -60,6 +60,8 @@ typedef struct msgbuf {
 
 typedef struct thread_data {
     int tfd;    /* tuner fd */ //xxx variable
+    pid_t a865_child_pid; /* A865 user-mode backend process, 0 when inactive */
+    boolean a865_backend;  /* tfd is a pipe supplied by a865r-stream */
 
     int fefd;   // DVB
     int dmxfd;  // DVB

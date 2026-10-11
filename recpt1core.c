@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <dirent.h>
 #include "recpt1core.h"
+#include "a865_backend.h"
 #include "version.h"
 #include "pt1_dev.h"
 #include <sys/poll.h>
@@ -484,6 +485,11 @@ close_tuner(thread_data *tdata)
 	struct dtv_properties props;
     int rv = 0;
 
+    if(tdata->a865_backend) {
+        if(a865_backend_stop(&tdata->tfd, &tdata->a865_child_pid) != 0)
+            rv = 1;
+    }
+
     if(tdata->table->type == CHTYPE_SATELLITE && tdata->lnb >= 0 && tdata->lnb != SEC_VOLTAGE_OFF) {
 		prop[0].cmd = DTV_VOLTAGE;
 		prop[0].u.data = SEC_VOLTAGE_OFF;
@@ -750,6 +756,19 @@ tune(char *channel, thread_data *tdata, int dev_num, const char *dev_path)
     if(tdata->table == NULL) {
         fprintf(stderr, "Invalid Channel: %s\n", channel);
         return 1;
+    }
+
+    /* The A865 bridge owns USB initialization, tuning, lock detection and TS reads. */
+    if(tdata->a865_backend) {
+        unsigned int frequency_hz;
+        if(tdata->table->type != CHTYPE_GROUND ||
+           tdata->table->set_freq < 63 || tdata->table->set_freq > 102) {
+            fprintf(stderr, "A865 backend supports Japanese ISDB-T physical channels 13-52\n");
+            return 1;
+        }
+        frequency_hz = GetFrequency_T(tdata->table->set_freq);
+        return a865_backend_start(frequency_hz, &tdata->tfd,
+                                  &tdata->a865_child_pid);
     }
 
     /* open tuner */

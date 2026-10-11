@@ -23,6 +23,66 @@
 * ACAS に必要な AES/SHA-256、PC/SC、CAS proxy クライアントをソースツリー内に
   持ち、ビルド時に dantto4k の checkout を参照しない。
 
+### CS 左旋の物理チャンネル
+
+`CS1`, `CS3`, …, `CS23`, `CS25` で 110 度 CS 左旋の物理チャンネルを
+指定できます。アンテナからチューナーまで左旋・対応 IF 帯域を受信できる
+設備が必要です。既存の偶数番号 `CS2` ～ `CS24` は右旋のままです。
+
+| 指定 | 中心 IF 周波数 (MHz) |
+| --- | --- |
+| CS1 / CS3 / CS5 / CS7 | 2766 / 2806 / 2846 / 2886 |
+| CS9 / CS11 / CS13 / CS15 | 2926 / 2966 / 3006 / 3046 |
+| CS17 / CS19 / CS21 / CS23 | 3086 / 3126 / 3166 / 3206 |
+| CS25 | 2726 |
+
+周波数は [JEITA の CS 左旋 IF 周波数表](https://home.jeita.or.jp/page_file/20250108092705_k2PXcjYray.pdf)
+に基づきます。これらはサービス番号ではなく物理周波数の指定です。
+TSID は `0`（特定の TSID を指定しない）を渡すため、受信できるストリームの
+選択はドライバーに依存します。実際の TSID が分かれば既存の `0x...` 指定を
+使用できます。試験サービス 884 / 885 の周波数・TSID は未確認のため、
+サービス番号の別名は定義していません。
+
+以前の CS4K 配列表の RF 周波数は LNB LO 9505 MHz を引いて IF に変換します。
+例: 12431 MHz / `0xC090` は IF 2926 MHz (`CS9`) です。
+
+例: `chkdvbsignal4k --dev /dev/dvb/adapter0 CS1`
+
+チャンネル名から周波数への変換と既存チャンネルの回帰確認:
+`./tests/check_channels.sh`（C コンパイラーと Python 3 が必要）。
+このテストは受信機のロックや試験サービスの検出を検証するものではありません。
+
+### AVerMedia A865 の ISDB-T 入力
+
+`recdvb4k --dev a865 27 10 -` は A865 用の `a865r-stream` バックエンドを起動し、
+初期化と調局後に TS を pipe で recdvb の既存録画・デスクランブル処理へ渡します。
+`-` を出力先にすると recdvb の出力は標準出力になります。バックエンドの実行ファイルは
+`PATH` 上の `a865r-stream` を使い、別の場所にある場合は
+`RECDVB_A865_BACKEND=/path/to/a865r-stream` で指定できます。
+
+バックエンドは Open Volar S の Rust ワークスペースにあります。ワークスペース直下で
+次のコマンドを実行します:
+
+```sh
+cargo build --release --locked -p a865rctl --bin a865r-stream
+```
+
+Linux では Open Volar S の USB カーネルモジュールと
+デバイス権限も必要です。バックエンドは準備完了を別 pipe で通知するため、TS の
+stdout に診断文字列が混ざりません。録画終了時には recdvb が子プロセスを停止し、
+USB セッションを解放します。
+
+A865 は地上波の物理チャンネル 13–52 のみを受け付けます。調局周波数は ARIB STD-B31
+の 473.142857 MHz (ch13) から 6 MHz 間隔のチャネルラスタに従います。
+バックエンド自身が MPEG lock を確認し、ロック後の TS bytes が得られてから
+recdvb 側の録画を開始します。フロントエンド ioctl による信号強度表示はありません。
+物理チャネルと ISDB-T 搬送波中心周波数の基準は
+[ARIB STD-B31](https://www.arib.or.jp/english/html/overview/doc/6-STD-B31v1_6-E2.pdf)
+です。
+
+疑似バックエンドで recdvb の TS pipe と子プロセス解放を確認する場合は、
+`make check-a865-backend` を実行します。これは物理 A865 の受信確認ではありません。
+
 ### B61/ACAS passthrough について
 
 この fork の B61 実装は、テレビ受信機としての完全な B61 実装ではなく、

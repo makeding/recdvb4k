@@ -613,6 +613,7 @@ show_options(void)
     fprintf(stderr, "  --port portnumber: Port number to connect\n");
     fprintf(stderr, "--http portnumber:   Turn on http broadcasting (run as a daemon)\n");
     fprintf(stderr, "--dev device:        Use adapter number, adapter path, or frontend path\n");
+    fprintf(stderr, "                     Use 'a865' for the AVerMedia A865 USB backend\n");
     fprintf(stderr, "--lnb voltage:       Specify LNB voltage (0, 11, 15)\n");
     fprintf(stderr, "--sid SID1,SID2,...: Specify SID number in CSV format (101,102,...)\n");
     fprintf(stderr, "--help:              Show this help\n");
@@ -712,6 +713,8 @@ main(int argc, char **argv)
     tdata.dopt = &dopt;
     tdata.lnb = -1;
     tdata.tfd = -1;
+    tdata.a865_child_pid = 0;
+    tdata.a865_backend = FALSE;
     tdata.fefd = 0;
     tdata.dmxfd = 0;
 #ifdef HAVE_B61
@@ -847,7 +850,10 @@ main(int argc, char **argv)
             fprintf(stderr, "UDP port: %d\n", port_to);
             break;
         case 'd':
-            if(optarg[0] == '/') {
+            if(strcmp(optarg, "a865") == 0) {
+                tdata.a865_backend = TRUE;
+                fprintf(stderr, "using AVerMedia A865 user-mode backend\n");
+            } else if(optarg[0] == '/') {
                 dev_path = optarg;
                 fprintf(stderr, "using device: %s\n", dev_path);
             } else {
@@ -1154,6 +1160,12 @@ while(1){	// http-server add-
         }
         bufptr->size = read(tdata.tfd, bufptr->buffer, MAX_READ_SIZE);
         if(bufptr->size <= 0) {
+            if(tdata.a865_backend) {
+                free(bufptr);
+                f_exit = TRUE;
+                enqueue(p_queue, NULL);
+                break;
+            }
             if((cur_time - tdata.start_time) >= tdata.recsec && !tdata.indefinite) {
                 f_exit = TRUE;
                 enqueue(p_queue, NULL);

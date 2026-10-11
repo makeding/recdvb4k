@@ -178,7 +178,10 @@ main(int argc, char **argv)
             fprintf(stderr, "LNB = %s\n", voltage[tdata.lnb]);
             break;
         case 'd':
-            if(optarg[0] == '/')
+            if(strcmp(optarg, "a865") == 0) {
+                fprintf(stderr, "A865 backend provides a TS stream only; FE signal metrics are unavailable\n");
+                return 1;
+            } else if(optarg[0] == '/')
                 dev_path = optarg;
             else
                 dev_num = atoi(optarg);
