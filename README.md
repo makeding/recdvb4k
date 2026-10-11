@@ -60,17 +60,19 @@ TSID は `0`（特定の TSID を指定しない）を渡すため、受信で�
 `PATH` 上の `a865r-stream` を使い、別の場所にある場合は
 `RECDVB_A865_BACKEND=/path/to/a865r-stream` で指定できます。
 
-バックエンドは Open Volar S の Rust ワークスペースにあります。ワークスペース直下で
-次のコマンドを実行します:
+バックエンドの独立プロジェクトは `AVer865R/a865r-recdvb` です。Nix でビルドし、
+生成された `a865r-stream` を `PATH` に追加するか、環境変数で直接指定します:
 
 ```sh
-cargo build --release --locked -p a865rctl --bin a865r-stream
+nix build /path/to/a865r-recdvb#a865r-stream
+export RECDVB_A865_BACKEND="$PWD/result/bin/a865r-stream"
+recdvb4k --dev a865 27 10 -
 ```
 
-Linux では Open Volar S の USB カーネルモジュールと
-デバイス権限も必要です。バックエンドは準備完了を別 pipe で通知するため、TS の
-stdout に診断文字列が混ざりません。録画終了時には recdvb が子プロセスを停止し、
-USB セッションを解放します。
+Linux では Open Volar S の USB カーネルモジュールは不要です。libusb が A865 の
+USB インターフェースを claim できるユーザー権限を設定してください。バックエンドは
+準備完了を別 pipe で通知するため、TS の stdout に診断文字列が混ざりません。
+録画終了時には recdvb が子プロセスを停止し、USB セッションを解放します。
 
 A865 は地上波の物理チャンネル 13–52 のみを受け付けます。調局周波数は ARIB STD-B31
 の 473.142857 MHz (ch13) から 6 MHz 間隔のチャネルラスタに従います。
