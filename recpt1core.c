@@ -767,7 +767,7 @@ tune(char *channel, thread_data *tdata, int dev_num, const char *dev_path)
             return 1;
         }
         frequency_hz = GetFrequency_T(tdata->table->set_freq);
-        return a865_backend_start(frequency_hz, &tdata->tfd,
+        return a865_backend_start_selected(frequency_hz, tdata->a865_selector, &tdata->tfd,
                                   &tdata->a865_child_pid);
     }
 

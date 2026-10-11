@@ -54,6 +54,13 @@ TSID は `0`（特定の TSID を指定しない）を渡すため、受信で�
 
 ### AVerMedia A865 の ISDB-T 入力
 
+複数台の場合は `--dev a865:serial:201005600670` または `--dev a865:port:1-2.3`
+で対象を固定できます。`a865r-stream --list-devices` で USB ID・シリアル・ポートを確認します。
+`--dev a865` は空いている対応 USB チューナーを自動選択します。指定した機器が使用中・未接続なら
+別の機器へ切り替えず失敗します。`RECDVB_A865_DEVICE` でも選択できます（明示した suffix が優先）。
+Mirakurun では各 tuner に異なる serial/port を指定してください。
+
+
 `recdvb4k --dev a865 27 10 -` は A865 用の `a865r-stream` バックエンドを起動し、
 初期化と調局後に TS を pipe で recdvb の既存録画・デスクランブル処理へ渡します。
 `-` を出力先にすると recdvb の出力は標準出力になります。バックエンドの実行ファイルは

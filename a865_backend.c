@@ -57,8 +57,13 @@ static void stop_child(pid_t *child_pid)
     *child_pid = 0;
 }
 
-int a865_backend_start(unsigned int frequency_hz, int *stream_fd,
-                       pid_t *child_pid)
+int a865_backend_start(unsigned int frequency_hz, int *stream_fd, pid_t *child_pid)
+{
+    return a865_backend_start_selected(frequency_hz, NULL, stream_fd, child_pid);
+}
+
+int a865_backend_start_selected(unsigned int frequency_hz, const char *selector,
+                                int *stream_fd, pid_t *child_pid)
 {
     int stream_pipe[2] = {-1, -1};
     int ready_pipe[2] = {-1, -1};
@@ -73,7 +78,7 @@ int a865_backend_start(unsigned int frequency_hz, int *stream_fd,
     const char *program;
     char frequency[16];
     char ready_fd[] = "3";
-    char *arguments[6];
+    char *arguments[8];
     pid_t child = 0;
     int result = 1;
     int spawn_error;
@@ -127,7 +132,15 @@ int a865_backend_start(unsigned int frequency_hz, int *stream_fd,
     arguments[2] = frequency;
     arguments[3] = "--ready-fd";
     arguments[4] = ready_fd;
-    arguments[5] = NULL;
+    if(!selector || !*selector)
+        selector = getenv("RECDVB_A865_DEVICE");
+    if(selector && *selector) {
+        arguments[5] = "--device";
+        arguments[6] = (char *)selector;
+        arguments[7] = NULL;
+    } else {
+        arguments[5] = NULL;
+    }
 
     spawn_error = posix_spawn_file_actions_init(&actions);
     if(spawn_error != 0) {

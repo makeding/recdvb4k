@@ -613,7 +613,7 @@ show_options(void)
     fprintf(stderr, "  --port portnumber: Port number to connect\n");
     fprintf(stderr, "--http portnumber:   Turn on http broadcasting (run as a daemon)\n");
     fprintf(stderr, "--dev device:        Use adapter number, adapter path, or frontend path\n");
-    fprintf(stderr, "                     Use 'a865' for the AVerMedia A865 USB backend\n");
+    fprintf(stderr, "                     Use 'a865' or 'a865:serial:VALUE' / 'a865:port:BUS-PORT' for the USB backend\n");
     fprintf(stderr, "--lnb voltage:       Specify LNB voltage (0, 11, 15)\n");
     fprintf(stderr, "--sid SID1,SID2,...: Specify SID number in CSV format (101,102,...)\n");
     fprintf(stderr, "--help:              Show this help\n");
@@ -715,6 +715,7 @@ main(int argc, char **argv)
     tdata.tfd = -1;
     tdata.a865_child_pid = 0;
     tdata.a865_backend = FALSE;
+    tdata.a865_selector = NULL;
     tdata.fefd = 0;
     tdata.dmxfd = 0;
 #ifdef HAVE_B61
@@ -850,7 +851,15 @@ main(int argc, char **argv)
             fprintf(stderr, "UDP port: %d\n", port_to);
             break;
         case 'd':
-            if(strcmp(optarg, "a865") == 0) {
+            tdata.a865_backend = FALSE;
+            tdata.a865_selector = NULL;
+            dev_path = NULL;
+            if(strcmp(optarg, "a865") == 0 || strncmp(optarg, "a865:", 5) == 0) {
+                if(optarg[4] == ':' && optarg[5] == '\0') {
+                    fprintf(stderr, "A865 device selector must not be empty\n");
+                    return 1;
+                }
+                tdata.a865_selector = optarg[4] == ':' ? optarg + 5 : NULL;
                 tdata.a865_backend = TRUE;
                 fprintf(stderr, "using AVerMedia A865 user-mode backend\n");
             } else if(optarg[0] == '/') {
