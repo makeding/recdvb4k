@@ -13,20 +13,18 @@
 * 文字コードを UTF-8 に統一
 * DVB-S3/高度 BS 系のチャンネル定義を追加し、`recdvb4k` で MMT/TLV
   ストリームをそのまま録画できるようにする。
-* ARIB STD-B61 の 4K/8K MMT/TLV 向け ACAS デスクランブルを
-  passthrough 形式で実装する。`--b61` 指定時は、PC/SC 経由で挿入済み
+* [libaribb61](../libaribb61) による ARIB STD-B61 の 4K/8K MMT/TLV 向け
+  ACAS デスクランブルを利用する。`--b61` 指定時は、PC/SC 経由で挿入済み
   ACAS カードを自動検出し、MMTP ペイロードを復号した TLV ストリームを
   出力する。
-* B61 のマルチタイプヘッダー拡張を解析し、MMT スクランブル制御
-  even/odd、メッセージ認証付き payload length、MMT スクランブル初期値
-  情報を扱う。
-* ACAS に必要な AES/SHA-256、PC/SC、CAS proxy クライアントをソースツリー内に
-  持ち、ビルド時に dantto4k の checkout を参照しない。
+* B61 の具体的な TLV/MMT 処理、ACAS、PC/SC、CAS proxy は libaribb61 が所有し、
+  recdvb は録画出力へのストリーム接続だけを行う。
 
 ### B61/ACAS passthrough について
 
-この fork の B61 実装は、テレビ受信機としての完全な B61 実装ではなく、
-録画・配信パイプラインで扱いやすい TLV passthrough を目的とした実装です。
+libaribb61 はテレビ受信機としての完全な B61 実装ではなく、録画・配信パイプラインで
+扱いやすい TLV passthrough を目的としています。recdvb は `put/get/flush` API を通じて
+その出力を既存のファイル・UDP 出力へ渡します。
 
 実装している主な処理:
 
@@ -131,14 +129,16 @@
   % make maintainer-clean
 ```
 
-4K B61/MMT-TLV の ACAS デスクランブルを有効にする場合は standalone Asio と
-PC/SC が必要です。実行時は `--b61` を指定すると、挿入済みの ACAS カードを
+4K B61/MMT-TLV の ACAS デスクランブルを有効にする場合は `libaribb61` を先に
+インストールし、その pkg-config ファイルを検出できるようにします。PC/SC と Asio は
+libaribb61 側の依存関係です。実行時は `--b61` を指定すると、挿入済みの ACAS カードを
 自動検出します。
 内網上の casproxyserver を使う場合は `--cas-proxy host:port` を追加します。
 
 ```
+  % export PKG_CONFIG_PATH=/path/to/libaribb61/lib/pkgconfig:$PKG_CONFIG_PATH
   % ./configure --enable-b25 --enable-b61
-  % make check
+  % make
   % recdvb4k --b61 BS4K_... 10 out.tlv
   % recdvb4k --b61 --cas-proxy 192.168.6.253:24000 BS4K_... 10 out.tlv
 ```

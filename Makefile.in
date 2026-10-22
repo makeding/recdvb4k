@@ -23,14 +23,12 @@ LIBS4    =
 B61_LIBS = @B61_LIBS@
 LDFLAGS  =
 
-B61_OBJS = @B61_OBJS@
-B61_TEST_TARGET = @B61_TEST_TARGET@
 REC_OBJS = recpt1.o decoder.o mkpath.o tssplitter_lite.o recpt1core.o
-OBJS  = $(REC_OBJS) $(B61_OBJS)
+OBJS  = $(REC_OBJS)
 OBJS2 = recpt1ctl.o recpt1core.o
 OBJS3 = checksignal.o recpt1core.o
 OBJS4 = tssplitter_lite.o tsmain.o
-OBJALL = $(OBJS) $(OBJS2) $(OBJS3) $(OBJS4) acas_test.o
+OBJALL = $(OBJS) $(OBJS2) $(OBJS3) $(OBJS4)
 DEPEND = .deps
 
 ifdef EXTRA_SID
@@ -40,7 +38,7 @@ endif
 all: $(TARGETS)
 
 clean:
-	rm -f $(OBJALL) $(TARGETS) $(B61_TEST_TARGET) $(DEPEND) version.h
+	rm -f $(OBJALL) $(TARGETS) $(DEPEND) version.h
 
 distclean: clean
 	rm -f Makefile config.h config.log config.status
@@ -60,35 +58,7 @@ $(TARGET3): $(OBJS3)
 $(TARGET4): $(OBJS4)
 	$(CC) $(LDFLAGS) -o $@ $(OBJS4) $(LIBS4)
 
-acas_passthrough.o: acas/passthrough.cpp acas/passthrough.h acas/state.h acas/sections.h
-	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-acas_state.o: acas/state.cpp acas/state.h acas/card.h acas/sections.h acas/crypto/aes.h
-	$(CXX) $(CXXFLAGS) -c $< -o $@
-
-acas_card.o: acas/card.cpp acas/card.h acas/proxy/client.h acas/crypto/sha256.h
-	$(CXX) $(CXXFLAGS) -c $< -o $@
-
-acas_sections.o: acas/sections.cpp acas/sections.h
-	$(CXX) $(CXXFLAGS) -c $< -o $@
-
-acas_response.o: acas/response.cpp acas/response.h
-	$(CXX) $(CXXFLAGS) -c $< -o $@
-
-acas_aes.o: acas/crypto/aes.cpp acas/crypto/aes.h
-	$(CXX) $(CXXFLAGS) -c $< -o $@
-
-acas_cas_proxy_client.o: acas/proxy/client.cpp acas/proxy/client.h acas/proxy/protocol.h
-	$(CXX) $(CXXFLAGS) -c $< -o $@
-
-acas_test.o: acas/tests/acas_test.cpp acas/passthrough.h acas/state.h acas/sections.h acas/response.h acas/card.h acas/crypto/aes.h
-	$(CXX) $(CXXFLAGS) -c $< -o $@
-
-acas_test: acas_test.o $(B61_OBJS)
-	$(CXX) $(LDFLAGS) -o $@ acas_test.o $(B61_OBJS) $(LIBS) $(B61_LIBS)
-
-check: $(B61_TEST_TARGET)
-	@if test -n "$(B61_TEST_TARGET)"; then ./$(B61_TEST_TARGET); else echo "B61 tests skipped (configure with --enable-b61)"; fi
 
 $(DEPEND): version.h
 	$(CC) -MM $(REC_OBJS:.o=.c) $(OBJS2:.o=.c) $(CPPFLAGS) > $@
@@ -104,6 +74,6 @@ version.h:
 install: $(TARGETS)
 	install -m 755 $(TARGETS) $(DESTDIR)$(bindir)
 
-ifeq ($(filter check clean distclean maintainer-clean,$(MAKECMDGOALS)),)
+ifeq ($(filter clean distclean maintainer-clean,$(MAKECMDGOALS)),)
 -include .deps
 endif

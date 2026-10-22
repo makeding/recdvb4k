@@ -328,6 +328,23 @@ write_output(void *opaque, const uint8_t *data, size_t size)
     return 0;
 }
 
+#ifdef HAVE_B61
+static int
+drain_b61_output(ARIB_STD_B61 *b61, output_sink *sink)
+{
+    ARIB_STD_B61_BUFFER output;
+    int code = arib_std_b61_get(b61, &output);
+
+    if(code < 0) {
+        fprintf(stderr, "B61 output retrieval failed (code=%d)\n", code);
+        return -1;
+    }
+    if(output.size && write_output(sink, output.data, output.size) < 0)
+        return -1;
+    return 0;
+}
+#endif
+
 static int
 process_output(thread_data *tdata,
                const uint8_t *data,
@@ -335,8 +352,24 @@ process_output(thread_data *tdata,
                output_sink *sink)
 {
 #ifdef HAVE_B61
-    if(tdata->acas) {
-        return acas_passthrough_process(tdata->acas, data, size, write_output, sink);
+    if(tdata->b61) {
+        ARIB_STD_B61_BUFFER input;
+        int code;
+
+        if(size > UINT32_MAX) {
+            fprintf(stderr, "B61 input is too large\n");
+            return -1;
+        }
+        input.data = (uint8_t *)data;
+        input.size = (uint32_t)size;
+        code = arib_std_b61_put(tdata->b61, &input);
+        if(code < 0) {
+            fprintf(stderr, "B61 descrambling failed (code=%d)\n", code);
+            return -1;
+        }
+        if(code > 0)
+            fprintf(stderr, "B61 output includes packets that remain encrypted\n");
+        return drain_b61_output(tdata->b61, sink);
     }
 #else
     (void)tdata;
@@ -348,8 +381,16 @@ static int
 flush_output(thread_data *tdata, output_sink *sink)
 {
 #ifdef HAVE_B61
-    if(tdata->acas) {
-        return acas_passthrough_flush(tdata->acas, write_output, sink);
+    if(tdata->b61) {
+        int code = arib_std_b61_flush(tdata->b61);
+
+        if(code < 0) {
+            fprintf(stderr, "B61 flush failed (code=%d)\n", code);
+            return -1;
+        }
+        if(code > 0)
+            fprintf(stderr, "B61 output includes packets that remain encrypted\n");
+        return drain_b61_output(tdata->b61, sink);
     }
 #else
     (void)tdata;
@@ -715,7 +756,7 @@ main(int argc, char **argv)
     tdata.fefd = 0;
     tdata.dmxfd = 0;
 #ifdef HAVE_B61
-    tdata.acas = NULL;
+    tdata.b61 = NULL;
 #endif
 
     int result;
@@ -989,20 +1030,23 @@ if(use_http){	// http-server add-
 
 #ifdef HAVE_B61
     if(use_b61) {
-        tdata.acas = acas_passthrough_create();
-        if(!tdata.acas) {
+        tdata.b61 = create_arib_std_b61();
+        if(!tdata.b61) {
             fprintf(stderr, "Cannot start B61 passthrough descrambler\n");
             fprintf(stderr, "Fall back to raw recording\n");
             use_b61 = FALSE;
         } else {
-            if(cas_proxy && acas_passthrough_set_proxy(tdata.acas, cas_proxy) != 0) {
-                fprintf(stderr, "Cannot configure CAS proxy\n");
+            int b61_code = arib_std_b61_set_emm_proc(tdata.b61, 1);
+            if(b61_code >= 0)
+                b61_code = arib_std_b61_set_strip(tdata.b61, dopt.strip);
+            if(b61_code >= 0 && cas_proxy)
+                b61_code = arib_std_b61_set_cas_proxy(tdata.b61, cas_proxy);
+            if(b61_code < 0) {
+                fprintf(stderr, "Cannot configure B61 descrambler (code=%d)\n", b61_code);
                 fprintf(stderr, "Fall back to raw recording\n");
-                acas_passthrough_destroy(tdata.acas);
-                tdata.acas = NULL;
+                arib_std_b61_release(tdata.b61);
+                tdata.b61 = NULL;
                 use_b61 = FALSE;
-            } else {
-                acas_passthrough_set_strip(tdata.acas, dopt.strip);
             }
         }
     }
@@ -1240,9 +1284,9 @@ while(1){	// http-server add-
         split_shutdown(splitter);
     }
 #ifdef HAVE_B61
-    if(!use_http && tdata.acas) {
-        acas_passthrough_destroy(tdata.acas);
-        tdata.acas = NULL;
+    if(!use_http && tdata.b61) {
+        arib_std_b61_release(tdata.b61);
+        tdata.b61 = NULL;
     }
 #endif
 

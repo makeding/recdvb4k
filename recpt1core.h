@@ -33,7 +33,7 @@
 #include "config.h"
 #include "decoder.h"
 #ifdef HAVE_B61
-#include "acas/passthrough.h"
+#include <aribb61/arib_std_b61.h>
 #endif
 #include "recpt1.h"
 #include "mkpath.h"
@@ -82,7 +82,7 @@ typedef struct thread_data {
     decoder_options *dopt; //invariable
     splitter *splitter; //invariable
 #ifdef HAVE_B61
-    acas_passthrough_t *acas; //invariable
+    ARIB_STD_B61 *b61; //invariable
 #endif
 } thread_data;
 
